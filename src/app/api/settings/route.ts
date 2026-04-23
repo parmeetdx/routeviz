@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 type SettingsPayload = {
   dnsBaseline?: PersistedSettings["dnsBaseline"];
   scanConfig?: Partial<PersistedSettings["scanConfig"]>;
+  webhookConfig?: Partial<PersistedSettings["webhookConfig"]>;
+  authOverrides?: string[];
 };
 
 export async function POST(request: Request) {
@@ -16,6 +18,8 @@ export async function POST(request: Request) {
   const state = await saveSettings({
     dnsBaseline: payload.dnsBaseline,
     scanConfig: payload.scanConfig,
+    webhookConfig: payload.webhookConfig as PersistedSettings["webhookConfig"] | undefined,
+    authOverrides: payload.authOverrides,
   });
 
   revalidatePath("/");
