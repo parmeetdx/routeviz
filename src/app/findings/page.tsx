@@ -75,7 +75,7 @@ const findingBuckets: FindingBucket[] = [
     label: "MGMT",
     href: "/findings?bucket=management",
     matches: (finding) =>
-      ["management_surface", "docker_socket_write_mount"].includes(finding.type),
+      ["management_surface", "docker_socket_write_mount", "no_auth_layer"].includes(finding.type),
   },
 ];
 

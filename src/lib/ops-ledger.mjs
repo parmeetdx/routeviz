@@ -75,6 +75,7 @@ export function createFallbackSnapshot(settings, message = "Waiting for the firs
     workloads: [],
     routes: [],
     findings: [],
+    changes: [],
   };
 }
 

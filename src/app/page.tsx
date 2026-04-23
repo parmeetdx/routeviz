@@ -8,7 +8,7 @@ import type { Finding, RouteRecord } from "@/lib/ops-ledger-types";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const { snapshot } = await getOpsLedgerState();
+  const { snapshot, recentChanges } = await getOpsLedgerState();
   const model = buildServiceExplorerModel(snapshot, null);
   const findings = snapshot.findings;
   const trackedRouteCount = model.services.length;
@@ -77,6 +77,7 @@ export default async function Home() {
         unmatchedTargetCount={unmatchedTargetCount}
         managementSurfaceCount={managementSurfaceCount}
         urgentItems={urgentItems}
+        recentChanges={recentChanges}
       />
     </ConsolePage>
   );
