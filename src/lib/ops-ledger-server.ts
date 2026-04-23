@@ -380,7 +380,7 @@ function ensureScheduler() {
 
   const timer = setInterval(() => {
     void runDueScan();
-  }, 60_000);
+  }, 10_000);
 
   timer.unref?.();
   globalOpsLedger.__opsLedgerScheduler = timer;
