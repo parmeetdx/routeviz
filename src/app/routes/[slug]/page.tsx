@@ -8,5 +8,5 @@ export default async function RouteDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  redirect(`/?service=${slug}`);
+  redirect(`/routes?service=${slug}`);
 }

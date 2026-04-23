@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useDeferredValue, useEffect, useState } from "react";
 
 import type {
@@ -28,32 +29,14 @@ interface ServiceSection {
   services: ExplorerService[];
 }
 
-interface PriorityFinding {
-  id: string;
-  serviceLabel: string;
-  secondaryLabel: string;
-  severity: FindingSeverity;
-  type: string;
-  title: string;
-  evidence: string;
-  nextCheck: string;
-  href: string;
-}
-
-interface OverviewStatus {
-  criticalCount: number;
-  expiredCertificateCount: number;
-  unmatchedTargetCount: number;
-  managementSurfaceCount: number;
-}
-
-export function ServiceExplorer({
+export default function ServiceExplorer({
   model,
   pageLinks,
 }: {
   model: ServiceExplorerModel;
   pageLinks?: Array<{ href: string; label: string }>;
 }) {
+  const pathname = usePathname();
   const [query, setQuery] = useState("");
   const [mobileInventoryOpen, setMobileInventoryOpen] = useState(false);
   const deferredQuery = useDeferredValue(query);
@@ -68,8 +51,6 @@ export function ServiceExplorer({
             .includes(normalizedQuery),
         );
   const serviceSections = buildServiceSections(visibleServices, normalizedQuery);
-  const priorityFindings = buildPriorityFindings(visibleServices);
-  const overviewStatus = buildOverviewStatus(visibleServices);
   const activeService =
     visibleServices.find((service) => service.id === model.activeService?.id) ??
     model.activeService;
@@ -104,7 +85,7 @@ export function ServiceExplorer({
                       href={item.href}
                       className={cn(
                         "rounded-full px-3 py-2 text-sm transition",
-                        item.href === "/"
+                        item.href === pathname
                           ? "bg-[#121922] text-foreground shadow-[inset_0_0_0_1px_rgba(66,153,225,0.24)]"
                           : "text-muted hover:bg-[#121922] hover:text-foreground",
                       )}
@@ -125,231 +106,71 @@ export function ServiceExplorer({
         </header>
 
         <main className="mx-auto w-full max-w-[1120px] px-5 py-6 sm:px-6 lg:px-7">
-          <div className="space-y-6">
-            {priorityFindings.length > 0 ? (
-              <PriorityBoard findings={priorityFindings} status={overviewStatus} />
-            ) : null}
+          <div className="grid gap-6 xl:grid-cols-[17rem_minmax(0,1fr)]">
+            <aside className="hidden rounded-[1rem] border border-border bg-panel/92 shadow-[0_18px_48px_rgba(0,0,0,0.2)] xl:block xl:h-[calc(100dvh-11rem)] xl:overflow-hidden xl:sticky xl:top-6">
+              <ServiceRail
+                sections={serviceSections}
+                activeServiceId={activeService?.id ?? null}
+                query={query}
+                onQueryChange={setQuery}
+                visibleCount={visibleServices.length}
+              />
+            </aside>
 
-            <div className="grid gap-6 xl:grid-cols-[17rem_minmax(0,1fr)]">
-              <aside className="hidden rounded-[1rem] border border-border bg-panel/92 shadow-[0_18px_48px_rgba(0,0,0,0.2)] xl:block xl:h-[calc(100dvh-11rem)] xl:overflow-hidden xl:sticky xl:top-6">
-                <ServiceRail
-                  sections={serviceSections}
-                  activeServiceId={activeService?.id ?? null}
-                  query={query}
-                  onQueryChange={setQuery}
-                  visibleCount={visibleServices.length}
-                />
-              </aside>
-
-              <section className="min-h-0">
-                {activeService ? (
-                  <ServiceDetail service={activeService} />
-                ) : (
-                  <div className="rounded-[0.95rem] border border-border bg-panel px-5 py-5 text-sm text-muted">
-                    No services are available in the current snapshot yet.
-                  </div>
-                )}
-
-                <div className="mt-6 xl:hidden">
-                  <div className="rounded-[1rem] border border-border bg-panel/92 shadow-[0_18px_48px_rgba(0,0,0,0.18)]">
-                    <button
-                      type="button"
-                      onClick={() => setMobileInventoryOpen((value) => !value)}
-                      className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left sm:px-5"
-                    >
-                      <div>
-                        <div className="font-mono text-[0.76rem] uppercase tracking-[0.2em] text-muted">
-                          Browse Services
-                        </div>
-                        <div className="mt-2 text-lg font-semibold tracking-[-0.03em]">
-                          Exposure inventory
-                        </div>
-                        <p className="mt-1 text-sm text-muted">
-                          Search every route and switch the current service view.
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-3">
-                        <span className="rounded-full border border-border/80 bg-[#111820] px-3 py-1.5 text-sm text-muted">
-                          {visibleServices.length}
-                        </span>
-                        <span className="text-lg text-muted">
-                          {mobileInventoryOpen ? "−" : "+"}
-                        </span>
-                      </div>
-                    </button>
-
-                    {mobileInventoryOpen ? (
-                      <div className="border-t border-border/80">
-                        <ServiceRail
-                          sections={serviceSections}
-                          activeServiceId={activeService?.id ?? null}
-                          query={query}
-                          onQueryChange={setQuery}
-                          visibleCount={visibleServices.length}
-                          mobile
-                        />
-                      </div>
-                    ) : null}
-                  </div>
+            <section className="min-h-0">
+              {activeService ? (
+                <ServiceDetail service={activeService} />
+              ) : (
+                <div className="rounded-[0.95rem] border border-border bg-panel px-5 py-5 text-sm text-muted">
+                  No services are available in the current snapshot yet.
                 </div>
-              </section>
-            </div>
+              )}
+
+              <div className="mt-6 xl:hidden">
+                <div className="rounded-[1rem] border border-border bg-panel/92 shadow-[0_18px_48px_rgba(0,0,0,0.18)]">
+                  <button
+                    type="button"
+                    onClick={() => setMobileInventoryOpen((value) => !value)}
+                    className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left sm:px-5"
+                  >
+                    <div>
+                      <div className="font-mono text-[0.76rem] uppercase tracking-[0.2em] text-muted">
+                        Browse Services
+                      </div>
+                      <div className="mt-2 text-lg font-semibold tracking-[-0.03em]">
+                        Exposure inventory
+                      </div>
+                      <p className="mt-1 text-sm text-muted">
+                        Search every route and switch the current service view.
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <span className="rounded-full border border-border/80 bg-[#111820] px-3 py-1.5 text-sm text-muted">
+                        {visibleServices.length}
+                      </span>
+                      <span className="text-lg text-muted">
+                        {mobileInventoryOpen ? "−" : "+"}
+                      </span>
+                    </div>
+                  </button>
+
+                  {mobileInventoryOpen ? (
+                    <div className="border-t border-border/80">
+                      <ServiceRail
+                        sections={serviceSections}
+                        activeServiceId={activeService?.id ?? null}
+                        query={query}
+                        onQueryChange={setQuery}
+                        visibleCount={visibleServices.length}
+                        mobile
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </section>
           </div>
         </main>
-      </div>
-    </div>
-  );
-}
-
-function PriorityBoard({
-  findings,
-  status,
-}: {
-  findings: PriorityFinding[];
-  status: OverviewStatus;
-}) {
-  const statTiles = [
-    {
-      label: "Critical",
-      value: String(status.criticalCount),
-      note: "needs action",
-      tone: status.criticalCount > 0 ? "danger" : "muted",
-    },
-    {
-      label: "Expired certs",
-      value: String(status.expiredCertificateCount),
-      note: "renew now",
-      tone: status.expiredCertificateCount > 0 ? "danger" : "muted",
-    },
-    {
-      label: "Broken routes",
-      value: String(status.unmatchedTargetCount),
-      note: "no live target",
-      tone: status.unmatchedTargetCount > 0 ? "warning" : "muted",
-    },
-    {
-      label: "Mgmt surfaces",
-      value: String(status.managementSurfaceCount),
-      note: "public consoles",
-      tone: status.managementSurfaceCount > 0 ? "warning" : "muted",
-    },
-  ] as const;
-
-  return (
-    <section className="rounded-[1rem] border border-border bg-panel px-5 py-5 shadow-[0_18px_44px_rgba(0,0,0,0.18)]">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="font-mono text-[0.78rem] uppercase tracking-[0.2em] text-muted">
-            Overview
-          </div>
-          <h2 className="mt-2 text-[1.35rem] font-semibold tracking-[-0.04em] sm:text-[1.5rem]">
-            Exposure status
-          </h2>
-        </div>
-        <Link
-          href="/findings"
-          className="inline-flex items-center rounded-full border border-border bg-panel-2 px-3 py-2 text-sm text-muted transition hover:border-accent/28 hover:text-foreground"
-        >
-          Open all findings
-        </Link>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        {statTiles.map((tile) => (
-          <OverviewStatTile key={tile.label} {...tile} />
-        ))}
-      </div>
-
-      <div className="mt-5 rounded-[0.95rem] border border-border bg-panel-2">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="font-medium text-foreground">Priority queue</div>
-          <div className="flex flex-wrap gap-2">
-            <FindingToneBadge
-              label={`${status.criticalCount} critical`}
-              severity="high"
-              compact
-            />
-            <FindingToneBadge
-              label={`${findings.length} shown`}
-              severity="medium"
-              compact
-            />
-          </div>
-        </div>
-        <div className="divide-y divide-border/80">
-          {findings.map((finding) => (
-            <Link
-              key={finding.id}
-              href={toDetailHref(finding.href)}
-              className="flex flex-col gap-3 px-4 py-4 transition hover:bg-[#1a212a] lg:flex-row lg:items-center lg:justify-between"
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="text-sm font-semibold text-foreground">
-                    {finding.serviceLabel}
-                  </div>
-                  <FindingToneBadge
-                    label={compactFindingTypeLabel(finding.type)}
-                    severity={finding.severity}
-                    compact
-                  />
-                </div>
-                <div className="mt-1 truncate text-xs text-muted">
-                  {finding.secondaryLabel}
-                </div>
-                <div className="mt-2 max-w-3xl text-sm text-foreground/92">
-                  {compactFindingHeadline(finding.type)}
-                </div>
-                <div className="mt-1 line-clamp-1 text-sm text-muted">
-                  {finding.evidence}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <FindingToneBadge
-                  label={severityLabel(finding.severity)}
-                  severity={finding.severity}
-                  compact
-                />
-                <span className="text-sm text-accent">Open</span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function OverviewStatTile({
-  label,
-  value,
-  note,
-  tone,
-}: {
-  label: string;
-  value: string;
-  note: string;
-  tone: "danger" | "warning" | "muted";
-}) {
-  return (
-    <div className="rounded-[0.95rem] border border-border bg-panel-2 px-4 py-4">
-      <div className="flex items-center gap-3">
-        <span
-          className={cn(
-            "flex h-10 w-10 items-center justify-center rounded-[0.75rem] text-sm font-semibold sm:h-11 sm:w-11",
-            tone === "danger" && "bg-danger/16 text-danger",
-            tone === "warning" && "bg-warning/16 text-warning",
-            tone === "muted" && "bg-[#1a2129] text-[#95a2b3]",
-          )}
-        >
-          {value}
-        </span>
-        <div>
-          <div className="text-[0.98rem] font-medium text-foreground sm:text-base">
-            {label}
-          </div>
-          <div className="mt-1 hidden text-sm text-muted sm:block">{note}</div>
-        </div>
       </div>
     </div>
   );
@@ -570,43 +391,6 @@ function buildServiceSections(
       services: internalOnly,
     },
   ].filter((section) => section.services.length > 0);
-}
-
-function buildPriorityFindings(services: ExplorerService[]): PriorityFinding[] {
-  const ranked = services.flatMap((service) =>
-    service.findings.map((finding) => ({
-      id: finding.id,
-      serviceLabel: service.label,
-      secondaryLabel: service.secondaryLabel,
-      severity: finding.severity,
-      type: finding.type,
-      title: finding.title,
-      evidence: finding.evidence,
-      nextCheck: finding.nextCheck,
-      href: service.href,
-      routeSlug: finding.routeSlug,
-    })),
-  );
-
-  ranked.sort((left, right) => severityRank(left.severity) - severityRank(right.severity));
-
-  const seenRoutes = new Set<string>();
-  const result: PriorityFinding[] = [];
-
-  for (const finding of ranked) {
-    if (seenRoutes.has(finding.routeSlug)) {
-      continue;
-    }
-
-    seenRoutes.add(finding.routeSlug);
-    result.push(finding);
-
-    if (result.length === 4) {
-      break;
-    }
-  }
-
-  return result;
 }
 
 function ServiceDetail({ service }: { service: ExplorerService }) {
@@ -898,21 +682,4 @@ function getTopFinding(findings: Finding[]) {
 
 function toDetailHref(href: string) {
   return href.includes("#service-detail") ? href : `${href}#service-detail`;
-}
-
-function buildOverviewStatus(services: ExplorerService[]): OverviewStatus {
-  const findings = services.flatMap((service) => service.findings);
-
-  return {
-    criticalCount: findings.filter((finding) => finding.severity === "high").length,
-    expiredCertificateCount: findings.filter(
-      (finding) => finding.type === "certificate_expired",
-    ).length,
-    unmatchedTargetCount: findings.filter(
-      (finding) => finding.type === "unmatched_target",
-    ).length,
-    managementSurfaceCount: findings.filter((finding) =>
-      ["management_surface", "docker_socket_write_mount"].includes(finding.type),
-    ).length,
-  };
 }

@@ -12,6 +12,7 @@ export function ConsolePage({
   lastSyncLabel,
   actions,
   compactIntro = false,
+  hideIntro = false,
   children,
 }: {
   title: string;
@@ -20,6 +21,7 @@ export function ConsolePage({
   lastSyncLabel?: string | null;
   actions?: ReactNode;
   compactIntro?: boolean;
+  hideIntro?: boolean;
   children: ReactNode;
 }) {
   const navItems = [
@@ -67,7 +69,7 @@ export function ConsolePage({
       </header>
 
       <main className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-5 py-6 sm:px-6 lg:px-7">
-        {compactIntro ? (
+        {hideIntro ? null : compactIntro ? (
           <section className="px-1 py-1">
             <div className="font-mono text-[0.78rem] uppercase tracking-[0.18em] text-muted">
               {eyebrow}

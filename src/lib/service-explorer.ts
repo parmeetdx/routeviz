@@ -209,7 +209,7 @@ function buildPublicService(
   return {
     id: route.slug,
     kind: "public",
-    href: `/?service=${route.slug}`,
+    href: `/routes?service=${route.slug}`,
     label: getPublicLabel(route),
     secondaryLabel: route.primaryDomain ?? route.entrypoint,
     titleLinkLabel: route.primaryDomain ?? route.entrypoint,
@@ -372,7 +372,7 @@ function buildInternalService(
   return {
     id: `internal-${slugify(label)}`,
     kind: "internal",
-    href: `/?service=internal-${slugify(label)}`,
+    href: `/routes?service=internal-${slugify(label)}`,
     label,
     secondaryLabel: endpoint,
     titleLinkLabel: endpoint,
