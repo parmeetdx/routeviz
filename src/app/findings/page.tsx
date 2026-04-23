@@ -36,59 +36,59 @@ interface FindingBucket {
 const findingBuckets: FindingBucket[] = [
   {
     key: "all",
-    label: "All",
+    label: "ALL",
     href: "/findings",
     matches: () => true,
   },
   {
     key: "critical",
-    label: "Critical",
+    label: "CRITICAL",
     href: "/findings?bucket=critical",
     matches: (finding) => finding.severity === "high",
   },
   {
     key: "medium",
-    label: "Medium",
+    label: "MEDIUM",
     href: "/findings?bucket=medium",
     matches: (finding) => finding.severity === "medium",
   },
   {
     key: "low",
-    label: "Low",
+    label: "LOW",
     href: "/findings?bucket=low",
     matches: (finding) => finding.severity === "low",
   },
   {
     key: "certificate_expired",
-    label: "Expired certs",
+    label: "CERT_EXP",
     href: "/findings?bucket=certificate_expired",
     matches: (finding) => finding.type === "certificate_expired",
   },
   {
     key: "unmatched_target",
-    label: "Broken routes",
+    label: "BROKEN",
     href: "/findings?bucket=unmatched_target",
     matches: (finding) => finding.type === "unmatched_target",
   },
   {
     key: "management",
-    label: "Mgmt surfaces",
+    label: "MGMT",
     href: "/findings?bucket=management",
     matches: (finding) =>
       ["management_surface", "docker_socket_write_mount"].includes(finding.type),
   },
 ];
 
-function severityTone(severity: string) {
+function severityClasses(severity: string) {
   if (severity === "high") {
-    return "border-danger/25 bg-danger/14 text-danger";
+    return "border-danger/40 bg-danger/10 text-danger";
   }
 
   if (severity === "medium") {
-    return "border-warning/25 bg-warning/14 text-warning";
+    return "border-warning/40 bg-warning/10 text-warning";
   }
 
-  return "border-accent/25 bg-accent/14 text-accent";
+  return "border-accent/30 bg-accent/8 text-accent";
 }
 
 export default async function FindingsPage({
@@ -129,25 +129,25 @@ export default async function FindingsPage({
     activeBucket.key === "all"
       ? [
           {
-            title: "Critical",
-            eyebrow: "High severity",
+            title: "CRITICAL",
+            eyebrow: "HIGH SEVERITY",
             findings: findings.filter((finding) => finding.severity === "high"),
           },
           {
-            title: "Medium",
-            eyebrow: "Needs review",
+            title: "MEDIUM",
+            eyebrow: "NEEDS REVIEW",
             findings: findings.filter((finding) => finding.severity === "medium"),
           },
           {
-            title: "Low",
-            eyebrow: "Watch list",
+            title: "LOW",
+            eyebrow: "WATCH LIST",
             findings: findings.filter((finding) => finding.severity === "low"),
           },
         ].filter((section) => section.findings.length > 0)
       : [
           {
             title: activeBucket.label,
-            eyebrow: "Filtered queue",
+            eyebrow: "FILTERED QUEUE",
             findings: filteredFindings,
           },
         ];
@@ -155,42 +155,46 @@ export default async function FindingsPage({
   return (
     <ConsolePage
       eyebrow="Findings"
-      title="Issue board"
-      description="Choose a category, then open the affected service."
+      title="issue_board"
+      description="Select a filter bucket → open the affected service route."
       lastSyncLabel={model.lastSyncLabel}
       compactIntro
       actions={
         <>
-          <span className="rounded-[0.45rem] border border-danger/25 bg-danger/14 px-3 py-1.5 text-xs text-danger sm:text-sm">
-            {severityCounts.high} high
+          <span className={`font-mono text-xs border px-2.5 py-1 ${severityClasses("high")}`}>
+            {severityCounts.high} HIGH
           </span>
-          <span className="rounded-[0.45rem] border border-warning/25 bg-warning/14 px-3 py-1.5 text-xs text-warning sm:text-sm">
-            {severityCounts.medium} medium
+          <span className={`font-mono text-xs border px-2.5 py-1 ${severityClasses("medium")}`}>
+            {severityCounts.medium} MED
           </span>
-          <span className="rounded-[0.45rem] border border-accent/25 bg-accent/14 px-3 py-1.5 text-xs text-accent sm:text-sm">
-            {severityCounts.low} low
+          <span className={`font-mono text-xs border px-2.5 py-1 ${severityClasses("low")}`}>
+            {severityCounts.low} LOW
           </span>
         </>
       }
     >
-      <ConsoleCard title="Browse by category" eyebrow="Quick filters">
-        <div className="flex flex-wrap gap-2">
+      {/* ── Filter bucket bar ── */}
+      <ConsoleCard title="Filter Queue" eyebrow="BUCKETS">
+        <div className="flex flex-wrap gap-1.5">
           {findingBuckets.map((bucket) => {
             const active = bucket.key === activeBucket.key;
+            const count = bucketCounts.get(bucket.key) ?? 0;
 
             return (
               <Link
                 key={bucket.key}
                 href={bucket.href}
-                className={
+                className={[
+                  "inline-flex items-center gap-2 font-mono text-xs border px-3 py-1.5 transition",
                   active
-                    ? "inline-flex items-center gap-2 rounded-full border border-accent/28 bg-accent/14 px-3 py-2 text-sm text-foreground"
-                    : "inline-flex items-center gap-2 rounded-full border border-border bg-panel-2 px-3 py-2 text-sm text-muted transition hover:border-accent/28 hover:text-foreground"
-                }
+                    ? "border-accent/50 bg-accent/12 text-accent"
+                    : "border-border/60 bg-panel-2 text-muted/80 hover:border-accent/30 hover:text-foreground/80",
+                ].join(" ")}
               >
+                {active ? <span className="text-accent/60">&gt;</span> : null}
                 <span>{bucket.label}</span>
-                <span className="rounded-full bg-[#111820] px-2 py-0.5 text-xs text-muted">
-                  {bucketCounts.get(bucket.key) ?? 0}
+                <span className="font-mono text-[0.6rem] border border-current/20 bg-black/20 px-1.5 py-0.5 tabular-nums">
+                  {count}
                 </span>
               </Link>
             );
@@ -198,29 +202,45 @@ export default async function FindingsPage({
         </div>
       </ConsoleCard>
 
+      {/* ── Finding sections ── */}
       {sections.map((section) => (
         <ConsoleCard key={section.title} title={section.title} eyebrow={section.eyebrow}>
           {section.findings.length === 0 ? (
-            <div className="rounded-[0.85rem] border border-border bg-panel-2 px-4 py-4 text-sm text-muted">
-              No findings are active in this category.
+            <div className="border border-border/50 bg-panel-2 px-4 py-3 font-mono text-xs text-muted/70">
+              <span className="text-accent/40 mr-1">✓</span>
+              No findings active in this category.
             </div>
           ) : (
-            <div className="space-y-2.5">
-              {section.findings.map((finding) => {
-                const meta = serviceMeta.get(finding.routeSlug);
+            <div className="border border-border/50">
+              {/* Table column header */}
+              <div className="hidden md:grid md:grid-cols-[2fr_1fr_auto] gap-x-4 border-b border-border/50 bg-panel-2 px-4 py-1.5">
+                <div className="font-mono text-[0.58rem] uppercase tracking-[0.3em] text-muted/50">
+                  SERVICE / TYPE / EVIDENCE
+                </div>
+                <div className="font-mono text-[0.58rem] uppercase tracking-[0.3em] text-muted/50">
+                  HEADLINE
+                </div>
+                <div className="font-mono text-[0.58rem] uppercase tracking-[0.3em] text-muted/50 text-right pr-2">
+                  ACTION
+                </div>
+              </div>
+              <div className="divide-y divide-border/40">
+                {section.findings.map((finding) => {
+                  const meta = serviceMeta.get(finding.routeSlug);
 
-                return (
-                  <FindingRow
-                    key={finding.id}
-                    type={finding.type}
-                    severity={finding.severity}
-                    evidence={finding.evidence}
-                    href={`/routes?service=${finding.routeSlug}#service-detail`}
-                    serviceLabel={meta?.label ?? finding.routeSlug}
-                    secondaryLabel={meta?.secondaryLabel ?? finding.routeSlug}
-                  />
-                );
-              })}
+                  return (
+                    <FindingRow
+                      key={finding.id}
+                      type={finding.type}
+                      severity={finding.severity}
+                      evidence={finding.evidence}
+                      href={`/routes?service=${finding.routeSlug}#service-detail`}
+                      serviceLabel={meta?.label ?? finding.routeSlug}
+                      secondaryLabel={meta?.secondaryLabel ?? finding.routeSlug}
+                    />
+                  );
+                })}
+              </div>
             </div>
           )}
         </ConsoleCard>
@@ -245,36 +265,46 @@ function FindingRow({
   secondaryLabel: string;
 }) {
   return (
-    <article className="rounded-[0.8rem] border border-border bg-panel-2 px-4 py-3">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <article className="group px-4 py-3 hover:bg-panel-2/60 transition">
+      <div className="flex flex-col gap-2 md:grid md:grid-cols-[2fr_1fr_auto] md:items-start md:gap-x-4">
+        {/* Col 1: service + type + evidence */}
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-sm font-semibold text-foreground">{serviceLabel}</div>
+            {/* Severity indicator */}
             <span
-              className={`rounded-[0.45rem] border px-2.5 py-1 text-xs ${severityTone(severity)}`}
-            >
+              className={[
+                "h-1.5 w-1.5 shrink-0 rounded-full",
+                severity === "high" ? "bg-danger" : severity === "medium" ? "bg-warning" : "bg-accent",
+              ].join(" ")}
+            />
+            <span className="font-mono text-sm font-bold text-foreground">{serviceLabel}</span>
+            <span className={`font-mono text-[0.62rem] uppercase tracking-wider border px-2 py-0.5 leading-none ${severityClasses(severity)}`}>
               {compactFindingTypeLabel(type)}
             </span>
-            <span className="rounded-[0.45rem] border border-border bg-[#111820] px-2.5 py-1 text-xs text-muted">
+            <span className={`font-mono text-[0.6rem] uppercase tracking-wider border px-1.5 py-0.5 leading-none ${severityClasses(severity)}`}>
               {severity}
             </span>
           </div>
-          <div className="mt-1 truncate text-xs text-muted">{secondaryLabel}</div>
-          <div className="mt-2 text-sm text-foreground/92">
-            {compactFindingHeadline(type)}
-          </div>
-          <div className="mt-1 line-clamp-1 text-sm text-muted">{evidence}</div>
+          <div className="mt-1 font-mono text-[0.65rem] text-muted/70 truncate">{secondaryLabel}</div>
+          <div className="mt-1 font-mono text-xs text-foreground/70 line-clamp-1">{evidence}</div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-3">
-          <span className="text-xs uppercase tracking-[0.16em] text-muted">
+        {/* Col 2: headline + next-check */}
+        <div className="min-w-0">
+          <div className="font-mono text-xs text-foreground/85">{compactFindingHeadline(type)}</div>
+          <div className="mt-1 font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
             {compactFindingNextCheck(type)}
-          </span>
+          </div>
+        </div>
+
+        {/* Col 3: action */}
+        <div className="flex items-center">
           <Link
             href={href}
-            className="inline-flex items-center rounded-full border border-accent/22 bg-accent/12 px-3 py-1.5 text-sm text-accent transition hover:bg-accent/18"
+            className="font-mono text-xs border border-accent/30 bg-accent/8 px-3 py-1.5 text-accent transition hover:bg-accent/18 hover:border-accent/55 whitespace-nowrap"
+            style={{ textShadow: "0 0 6px rgba(57,255,122,0.3)" }}
           >
-            Open service
+            open→
           </Link>
         </div>
       </div>

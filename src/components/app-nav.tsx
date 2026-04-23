@@ -4,17 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/", label: "Overview" },
-  { href: "/setup", label: "Setup" },
-  { href: "/routes", label: "Routes" },
-  { href: "/findings", label: "Findings" },
+  { href: "/", label: "overview" },
+  { href: "/setup", label: "setup" },
+  { href: "/routes", label: "routes" },
+  { href: "/findings", label: "findings" },
 ];
 
 export function AppNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-wrap gap-2">
+    <nav className="flex flex-wrap gap-1">
       {items.map((item) => {
         const active =
           pathname === item.href ||
@@ -25,12 +25,13 @@ export function AppNav() {
             key={item.href}
             href={item.href}
             className={[
-              "rounded-full border px-3 py-1.5 text-sm transition",
+              "font-mono text-xs border px-3 py-1.5 transition",
               active
-                ? "border-accent/30 bg-accent/12 text-foreground"
-                : "border-border bg-panel-2 text-muted hover:border-accent/25 hover:text-foreground",
+                ? "border-accent/50 bg-accent/10 text-accent"
+                : "border-border/50 bg-panel-2 text-muted/80 hover:border-accent/30 hover:text-foreground/80",
             ].join(" ")}
           >
+            {active ? <span className="text-accent/60 mr-1">&gt;</span> : <span className="text-muted/30 mr-1">_</span>}
             {item.label}
           </Link>
         );

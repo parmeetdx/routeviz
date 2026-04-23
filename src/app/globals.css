@@ -1,16 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0b1014;
-  --foreground: #e6edf3;
-  --panel: #151b20;
-  --panel-2: #1d242c;
-  --muted: #8b949e;
-  --accent: #5da9ff;
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --border: rgba(139, 148, 158, 0.2);
+  /* Core terminal palette */
+  --background: #080c0a;
+  --foreground: #c8ffc8;
+  --panel: #0d120f;
+  --panel-2: #111a13;
+  --muted: #4d7a55;
+  --accent: #39ff7a;
+  --success: #39ff7a;
+  --warning: #ffb800;
+  --danger: #ff3b3b;
+  --border: rgba(57, 255, 122, 0.12);
+
+  /* Terminal glow values */
+  --glow-green: 0 0 8px rgba(57, 255, 122, 0.45);
+  --glow-amber: 0 0 8px rgba(255, 184, 0, 0.45);
+  --glow-red: 0 0 8px rgba(255, 59, 59, 0.5);
+  --glow-dim: 0 0 4px rgba(57, 255, 122, 0.18);
 }
 
 @theme inline {
@@ -32,7 +39,23 @@ body {
   min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-ibm-plex-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-jetbrains-mono), "Courier New", monospace;
+}
+
+/* Subtle scanline overlay on the whole page */
+body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.06) 2px,
+    rgba(0, 0, 0, 0.06) 4px
+  );
 }
 
 a {
@@ -40,5 +63,47 @@ a {
 }
 
 ::selection {
-  background: rgba(96, 165, 250, 0.28);
+  background: rgba(57, 255, 122, 0.22);
+}
+
+/* Scrollbar — terminal style */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--panel);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(57, 255, 122, 0.22);
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(57, 255, 122, 0.4);
+}
+
+/* Blinking cursor utility */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Glow pulse for critical alerts */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(255, 59, 59, 0.4); }
+  50%       { box-shadow: 0 0 18px rgba(255, 59, 59, 0.7); }
+}
+.glow-pulse-danger {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes glow-pulse-amber {
+  0%, 100% { box-shadow: 0 0 6px rgba(255, 184, 0, 0.35); }
+  50%       { box-shadow: 0 0 16px rgba(255, 184, 0, 0.6); }
+}
+.glow-pulse-amber {
+  animation: glow-pulse-amber 2.4s ease-in-out infinite;
 }

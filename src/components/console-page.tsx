@@ -25,69 +25,84 @@ export function ConsolePage({
   children: ReactNode;
 }) {
   const navItems = [
-    { href: "/", label: "Overview", active: eyebrow === "Overview" },
-    { href: "/setup", label: "Setup", active: eyebrow === "Setup" },
-    { href: "/routes", label: "Routes", active: eyebrow === "Routes" },
-    { href: "/findings", label: "Findings", active: eyebrow === "Findings" },
+    { href: "/", label: "overview", active: eyebrow === "Overview" },
+    { href: "/setup", label: "setup", active: eyebrow === "Setup" },
+    { href: "/routes", label: "routes", active: eyebrow === "Routes" },
+    { href: "/findings", label: "findings", active: eyebrow === "Findings" },
   ];
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
-      <header className="border-b border-border bg-panel/96 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4 px-5 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-7">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-10">
-            <Link href="/" className="text-[1.95rem] font-semibold tracking-[-0.04em]">
-              Ops Ledger
+      {/* Header */}
+      <header className="border-b border-border bg-panel/98 backdrop-blur sticky top-0 z-50">
+        <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3 px-5 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-7">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-8">
+            {/* Logo / brand */}
+            <Link href="/" className="flex items-center gap-2 select-none">
+              <span className="font-mono text-accent text-lg font-bold tracking-widest" style={{ textShadow: "0 0 12px rgba(57,255,122,0.6)" }}>
+                OPS-LEDGER
+              </span>
+              <span className="blink font-mono text-accent text-lg leading-none">▋</span>
             </Link>
-            <nav className="flex gap-2 overflow-x-auto whitespace-nowrap pb-1 lg:pb-0">
+
+            {/* Nav */}
+            <nav className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 lg:pb-0">
               {navItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "rounded-full px-3 py-2 text-sm transition",
+                    "font-mono text-xs px-3 py-1.5 transition-all duration-150 border",
                     item.active
-                      ? "bg-[#121922] text-foreground shadow-[inset_0_0_0_1px_rgba(66,153,225,0.24)]"
-                      : "text-muted hover:bg-[#121922] hover:text-foreground",
+                      ? "border-accent/50 bg-accent/10 text-accent"
+                      : "border-transparent text-muted hover:border-border hover:text-foreground/80",
                   )}
                 >
+                  {item.active ? <span className="text-accent/60 mr-1">&gt;</span> : <span className="text-muted/40 mr-1">_</span>}
                   {item.label}
                 </Link>
               ))}
             </nav>
           </div>
 
+          {/* Right side: actions + sync time */}
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted sm:justify-end">
             {actions}
             {lastSyncLabel ? (
-              <span className="inline-flex rounded-full border border-border/80 bg-[#121922] px-3 py-2 text-muted">
-                Last sync {lastSyncLabel}
+              <span className="font-mono text-xs border border-border/60 bg-panel-2 px-3 py-1.5 text-muted/80">
+                <span className="text-accent/50 mr-1">✓</span>sync {lastSyncLabel}
               </span>
             ) : null}
           </div>
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-5 py-6 sm:px-6 lg:px-7">
+      <main className="mx-auto flex w-full max-w-[1120px] flex-col gap-5 px-5 py-5 sm:px-6 lg:px-7">
         {hideIntro ? null : compactIntro ? (
-          <section className="px-1 py-1">
-            <div className="font-mono text-[0.78rem] uppercase tracking-[0.18em] text-muted">
-              {eyebrow}
+          <section className="px-1 py-2">
+            <div className="font-mono text-[0.68rem] uppercase tracking-[0.3em] text-muted/70">
+              <span className="text-accent/50 mr-1">##</span>{eyebrow.toLowerCase()}
             </div>
-            <h1 className="mt-3 text-[1.65rem] font-semibold tracking-[-0.05em] sm:text-[2rem]">
+            <h1 className="mt-2 font-mono text-[1.4rem] font-bold tracking-tight text-foreground sm:text-[1.75rem]"
+              style={{ textShadow: "0 0 20px rgba(57,255,122,0.15)" }}>
               {title}
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{description}</p>
+            <p className="mt-1.5 max-w-2xl font-mono text-xs leading-6 text-muted">{description}</p>
           </section>
         ) : (
-          <section className="rounded-[0.95rem] border border-border bg-panel px-5 py-5 shadow-[0_12px_32px_rgba(0,0,0,0.16)]">
-            <div className="font-mono text-[0.78rem] uppercase tracking-[0.18em] text-muted">
-              {eyebrow}
+          <section className="border border-border bg-panel px-5 py-5 shadow-[0_0_30px_rgba(57,255,122,0.04)]">
+            {/* Top rule line */}
+            <div className="mb-4 flex items-center gap-3">
+              <span className="font-mono text-[0.68rem] uppercase tracking-[0.3em] text-muted/70">
+                <span className="text-accent/50 mr-1">##</span>{eyebrow.toLowerCase()}
+              </span>
+              <div className="flex-1 border-t border-border/60" />
             </div>
-            <h1 className="mt-4 text-[2rem] font-semibold tracking-[-0.05em] text-balance sm:text-[2.5rem] lg:text-[3rem]">
+            <h1 className="font-mono text-[1.8rem] font-bold tracking-tight text-foreground text-balance sm:text-[2.2rem] lg:text-[2.8rem]"
+              style={{ textShadow: "0 0 24px rgba(57,255,122,0.18)" }}>
               {title}
             </h1>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-muted">{description}</p>
+            <p className="mt-3 max-w-3xl font-mono text-xs leading-7 text-muted">{description}</p>
           </section>
         )}
 
@@ -107,16 +122,21 @@ export function ConsoleCard({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-[0.9rem] border border-border bg-panel px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.14)]">
-      {eyebrow ? (
-        <div className="font-mono text-[0.78rem] uppercase tracking-[0.18em] text-muted">
-          {eyebrow}
+    <section className="border border-border bg-panel px-5 py-4 shadow-[0_0_24px_rgba(57,255,122,0.03)]">
+      {/* Card header row */}
+      <div className="flex items-center gap-3 mb-4 pb-3 border-b border-border/60">
+        <span className="font-mono text-accent/50 text-xs">▸</span>
+        <div>
+          {eyebrow ? (
+            <div className="font-mono text-[0.62rem] uppercase tracking-[0.28em] text-muted/70">
+              {eyebrow}
+            </div>
+          ) : null}
+          <h2 className="font-mono text-sm font-bold text-foreground/90 tracking-tight">{title}</h2>
         </div>
-      ) : null}
-      <h2 className="mt-3 text-[1.35rem] font-semibold tracking-[-0.03em]">
-        {title}
-      </h2>
-      <div className="mt-4">{children}</div>
+        <div className="flex-1 border-t border-border/40" />
+      </div>
+      {children}
     </section>
   );
 }

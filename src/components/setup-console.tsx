@@ -210,51 +210,54 @@ export default function SetupConsole({
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_290px]">
-      <section className="overflow-hidden rounded-[0.9rem] border border-border bg-panel shadow-[0_12px_32px_rgba(0,0,0,0.16)]">
-        <div className="border-b border-border px-5 py-5 sm:px-6">
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <section className="overflow-hidden border border-border bg-panel">
+        <div className="border-b border-border px-5 py-4 sm:px-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
-              <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-muted">
-                Setup
+              <p className="font-mono text-[0.62rem] uppercase tracking-[0.28em] text-muted/70">
+                <span className="text-accent/40 mr-1">▸</span>CONNECTOR_STATUS
               </p>
-              <h2 className="mt-2 text-[1.35rem] font-semibold tracking-[-0.04em]">
+              <h2 className="mt-2 font-mono text-base font-bold tracking-tight">
                 {readiness
                   ? "Nothing to change on this host"
                   : "Connector access needs attention"}
               </h2>
-              <p className="mt-3 text-sm leading-7 text-muted">
+              <p className="mt-2 font-mono text-xs leading-6 text-muted/80">
                 {readiness
-                  ? "Recommended for this host: keep DNS drift checks off and run recurring snapshots every 5 minutes."
+                  ? "Recommended: keep DNS drift checks off and run recurring snapshots every 5 minutes."
                   : "Fix connector access first. After that, this page is mostly about optional DNS drift checks and how much local history you want."}
               </p>
             </div>
             <Badge
-              label={readiness ? "Ready" : "Needs action"}
+              label={readiness ? "READY" : "NEEDS_ACTION"}
               tone={readiness ? "success" : "warning"}
             />
           </div>
         </div>
 
         <div className="border-b border-border px-5 py-4 sm:px-6">
-          <div className="overflow-hidden rounded-[0.72rem] border border-border bg-panel-2">
+          <div className="border border-border/60 divide-y divide-border/50">
             {connectors.map((connector) => (
               <div
                 key={connector.id}
-                className="grid gap-2 border-b border-border px-4 py-3 last:border-b-0 md:grid-cols-[180px_110px_minmax(0,1fr)] md:items-start"
+                className="grid gap-2 px-4 py-3 hover:bg-panel-2/40 transition md:grid-cols-[180px_110px_minmax(0,1fr)] md:items-start"
               >
-                <div className="min-w-0 text-sm font-medium text-foreground">
+                <div className="min-w-0 font-mono text-xs font-bold text-foreground">
                   {connector.label}
                 </div>
-                <div className="flex items-center gap-2 text-xs uppercase tracking-[0.14em] text-muted">
+                <div className="flex items-center gap-2 font-mono text-[0.62rem] uppercase tracking-wider text-muted/70">
                   <span
-                    className={`h-2 w-2 rounded-full ${
+                    className={`h-1.5 w-1.5 ${
                       connector.requiresAction ? "bg-warning" : "bg-success"
                     }`}
+                    style={connector.requiresAction
+                      ? { boxShadow: "0 0 5px rgba(255,184,0,0.5)" }
+                      : { boxShadow: "0 0 5px rgba(57,255,122,0.5)" }}
                   />
                   <span>{formatConnectorStatus(connector.status)}</span>
                 </div>
-                <p className="min-w-0 text-sm leading-6 text-muted">
+                <p className="min-w-0 font-mono text-xs leading-6 text-muted/80">
                   {getConnectorSummary(connector)}
                 </p>
               </div>
@@ -263,22 +266,22 @@ export default function SetupConsole({
         </div>
 
         <div className="px-5 py-5 sm:px-6">
-          <div className="overflow-hidden rounded-[0.8rem] border border-border bg-panel-2">
+          <div className="border border-border/60 divide-y divide-border/50">
             <section className="grid gap-5 px-4 py-5 sm:px-5 lg:grid-cols-[210px_minmax(0,1fr)]">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
-                  DNS drift checks
+                <p className="font-mono text-[0.62rem] uppercase tracking-[0.22em] text-muted/70">
+                  DNS_DRIFT_CHECKS
                 </p>
-                <h3 className="mt-2 text-base font-semibold text-foreground">
+                <h3 className="mt-2 font-mono text-sm font-bold text-foreground">
                   Optional
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-muted">
+                <p className="mt-2 font-mono text-xs leading-6 text-muted/80">
                   Leave this off unless you want alerts when public DNS resolves
                   somewhere unexpected.
                 </p>
               </div>
 
-              <div className="min-w-0 space-y-4">
+              <div className="min-w-0 space-y-3">
                 <div
                   role="radiogroup"
                   aria-label="DNS baseline mode"
@@ -289,61 +292,61 @@ export default function SetupConsole({
                       key={option.value}
                       type="button"
                       onClick={() => setBaselineMode(option.value)}
-                      className={`min-w-0 rounded-[0.7rem] border px-4 py-3 text-left transition ${
+                      className={`min-w-0 border px-4 py-3 text-left transition ${
                         baselineMode === option.value
-                          ? "border-accent/45 bg-[#111820] shadow-[inset_0_0_0_1px_rgba(76,139,245,0.12)]"
-                          : "border-border bg-panel hover:border-accent/20"
+                          ? "border-accent/45 bg-panel-2 shadow-[inset_3px_0_0_0_var(--color-accent)]"
+                          : "border-border/50 bg-panel hover:border-accent/25"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-medium text-foreground">
+                        <span className="font-mono text-xs font-bold text-foreground">
                           {option.label}
                         </span>
                         {option.recommended ? (
-                          <span className="rounded-full border border-success/25 bg-success/12 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-success">
-                            Default
+                          <span className="font-mono text-[0.58rem] uppercase tracking-wider border border-success/30 bg-success/10 px-1.5 py-0.5 text-success">
+                            default
                           </span>
                         ) : null}
                       </div>
-                      <div className="mt-2 text-xs leading-5 text-muted">
+                      <div className="mt-1.5 font-mono text-[0.62rem] leading-5 text-muted/70">
                         {option.description}
                       </div>
                     </button>
                   ))}
                 </div>
 
-                <div className="min-w-0 rounded-[0.7rem] border border-border bg-[#111820] px-4 py-4">
+                <div className="min-w-0 border border-border/50 bg-panel-2 px-4 py-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="text-sm font-medium text-foreground">
+                    <div className="font-mono text-xs font-bold text-foreground">
                       {selectedBaselineOption.label}
                     </div>
                     {selectedBaselineOption.recommended ? (
-                      <Badge label="Recommended" tone="success" />
+                      <Badge label="RECOMMENDED" tone="success" />
                     ) : null}
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-muted">
+                  <p className="mt-2 font-mono text-xs leading-6 text-muted/80">
                     {selectedBaselineOption.helper}
                   </p>
 
                   {baselineMode === "disabled" ? (
-                    <p className="mt-3 text-sm leading-6 text-foreground/90">
+                    <p className="mt-2 font-mono text-xs leading-6 text-foreground/80">
                       Ops Ledger will keep recording DNS answers, but it will not open
                       mismatch findings from them.
                     </p>
                   ) : (
                     <div className="mt-4 grid gap-3">
                       <label className="grid gap-2">
-                        <span className="text-sm font-medium text-foreground">
+                        <span className="font-mono text-xs font-bold text-foreground">
                           {baselineValueLabel}
                         </span>
                         <input
-                          className="min-h-11 min-w-0 rounded-[0.7rem] border border-border bg-panel px-4 text-base outline-none transition focus:border-accent/40"
+                          className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
                           value={baselineValue}
                           onChange={(event) => setBaselineValue(event.target.value)}
                           placeholder={baselinePlaceholder}
                         />
                       </label>
-                      <div className="text-sm leading-6 text-muted">
+                      <div className="font-mono text-xs leading-6 text-muted/70">
                         {selectedBaselineOption.example}
                       </div>
                     </div>
@@ -352,23 +355,23 @@ export default function SetupConsole({
               </div>
             </section>
 
-            <section className="grid gap-5 border-t border-border px-4 py-5 sm:px-5 lg:grid-cols-[210px_minmax(0,1fr)]">
+            <section className="grid gap-5 px-4 py-5 sm:px-5 lg:grid-cols-[210px_minmax(0,1fr)]">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
-                  Snapshot history
+                <p className="font-mono text-[0.62rem] uppercase tracking-[0.22em] text-muted/70">
+                  SNAPSHOT_HISTORY
                 </p>
-                <h3 className="mt-2 text-base font-semibold text-foreground">
+                <h3 className="mt-2 font-mono text-sm font-bold text-foreground">
                   Local history
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-muted">
+                <p className="mt-2 font-mono text-xs leading-6 text-muted/80">
                   Five minutes is the default. Change this only if you want denser
                   debugging history or less background scanning.
                 </p>
               </div>
 
-              <div className="min-w-0 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-[0.7rem] border border-border bg-[#111820] px-4 py-3">
-                  <label className="flex items-center gap-3 text-sm text-foreground">
+              <div className="min-w-0 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 border border-border/50 bg-panel-2 px-4 py-3">
+                  <label className="flex items-center gap-3 font-mono text-xs text-foreground cursor-pointer">
                     <input
                       type="checkbox"
                       className="accent-[var(--color-accent)]"
@@ -377,33 +380,34 @@ export default function SetupConsole({
                     />
                     Enable recurring snapshots
                   </label>
-                  <div className="text-sm text-muted">
-                    {intervalEnabled ? "On" : "Off"}
+                  <div className="font-mono text-xs text-muted/70">
+                    {intervalEnabled ? <span className="text-accent">ON</span> : "OFF"}
                   </div>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-5">
+                <div className="grid gap-1.5 sm:grid-cols-5">
                   {intervalOptions.map((option) => (
                     <button
                       key={option.value}
                       type="button"
                       disabled={!intervalEnabled}
                       onClick={() => setIntervalMinutes(option.value)}
-                      className={`rounded-[0.7rem] border px-3 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      className={`border px-3 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${
                         intervalMinutes === option.value
-                          ? "border-accent/45 bg-[#111820] shadow-[inset_0_0_0_1px_rgba(76,139,245,0.12)]"
-                          : "border-border bg-panel hover:border-accent/20"
+                          ? "border-accent/45 bg-panel-2 shadow-[inset_3px_0_0_0_var(--color-accent)]"
+                          : "border-border/50 bg-panel hover:border-accent/25"
                       }`}
                     >
-                      <div className="text-sm font-medium text-foreground">
+                      <div className="font-mono text-xs font-bold text-foreground">
                         {option.label}
                       </div>
-                      <div className="mt-1 text-xs text-muted">{option.note}</div>
+                      <div className="mt-1 font-mono text-[0.6rem] text-muted/60">{option.note}</div>
                     </button>
                   ))}
                 </div>
 
-                <div className="rounded-[0.7rem] border border-border bg-[#111820] px-4 py-3 text-sm leading-6 text-muted">
+                <div className="border border-border/50 bg-panel-2 px-4 py-3 font-mono text-xs leading-6 text-muted/80">
+                  <span className="text-accent/40 mr-1">$</span>
                   {scheduleDetail}
                 </div>
               </div>
@@ -415,78 +419,79 @@ export default function SetupConsole({
               type="button"
               disabled={!readiness || status === "saving"}
               onClick={handleSave}
-              className="rounded-[0.55rem] border border-accent/25 bg-accent/14 px-4 py-2 text-sm text-accent transition hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
+              className="font-mono text-xs border border-accent/35 bg-accent/10 px-4 py-2 text-accent transition hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ textShadow: "0 0 6px rgba(57,255,122,0.3)" }}
             >
-              {status === "saving" ? "Saving..." : "Save changes"}
+              {status === "saving" ? "saving..." : "[save changes]"}
             </button>
             {status === "saved" ? (
-              <span className="text-sm text-success">Saved.</span>
+              <span className="font-mono text-xs text-success">
+                <span className="mr-1">✓</span>saved.
+              </span>
             ) : null}
             {status === "error" ? (
-              <span className="text-sm text-danger">{errorMessage}</span>
+              <span className="font-mono text-xs text-danger">{errorMessage}</span>
             ) : null}
           </div>
         </div>
       </section>
 
       <aside className="space-y-4">
-        <section className="overflow-hidden rounded-[0.85rem] border border-border bg-panel shadow-[0_10px_28px_rgba(0,0,0,0.14)]">
-          <div className="border-b border-border px-4 py-3">
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted">
-              Current setup
+        <section className="overflow-hidden border border-border bg-panel">
+          <div className="border-b border-border/60 px-4 py-2.5">
+            <p className="font-mono text-[0.62rem] uppercase tracking-[0.26em] text-muted/70">
+              <span className="text-accent/40 mr-1">▸</span>CURRENT_CONFIG
             </p>
           </div>
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border/50">
             <div className="px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted">
-                DNS checks
+              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
+                dns_checks
               </div>
-              <div className="mt-1 text-sm font-medium text-foreground">
+              <div className="mt-1 font-mono text-xs font-bold text-foreground">
                 {baselineStatus}
               </div>
-              <div className="mt-2 text-sm leading-6 text-muted">{baselineText}</div>
+              <div className="mt-1.5 font-mono text-xs leading-6 text-muted/80">{baselineText}</div>
             </div>
             <div className="px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted">
-                Snapshot cadence
+              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
+                snapshot_cadence
               </div>
-              <div className="mt-1 text-sm font-medium text-foreground">
+              <div className="mt-1 font-mono text-xs font-bold text-foreground">
                 {scheduleText}
               </div>
-              <div className="mt-2 text-sm leading-6 text-muted">
+              <div className="mt-1.5 font-mono text-xs leading-6 text-muted/80">
                 {scheduleDetail}
               </div>
             </div>
             <div className="px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted">
-                Retention limit
+              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
+                retention_limit
               </div>
-              <div className="mt-1 text-sm font-medium text-foreground">
+              <div className="mt-1 font-mono text-xs font-bold text-foreground">
                 {settings.scanConfig.retentionLimit} snapshots
               </div>
-              <div className="mt-2 text-sm leading-6 text-muted">
-                Snapshot history stays local and survives restarts when app data is
-                persisted.
+              <div className="mt-1.5 font-mono text-xs leading-6 text-muted/80">
+                History stays local and survives restarts when app data is persisted.
               </div>
             </div>
             <div className="px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted">
-                Docker socket
+              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
+                docker_socket
               </div>
-              <div className="mt-2 break-all rounded-[0.65rem] border border-border bg-[#111820] px-3 py-2 font-mono text-xs leading-6 text-foreground/92">
+              <div className="mt-2 break-all border border-border/50 bg-panel-2 px-3 py-2 font-mono text-[0.65rem] leading-6 text-foreground/85">
                 {settings.dockerSocketPath}
               </div>
             </div>
             <div className="px-4 py-3">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted">
-                NPM source path
+              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
+                npm_source_path
               </div>
-              <div className="mt-2 break-all rounded-[0.65rem] border border-border bg-[#111820] px-3 py-2 font-mono text-xs leading-6 text-foreground/92">
+              <div className="mt-2 break-all border border-border/50 bg-panel-2 px-3 py-2 font-mono text-[0.65rem] leading-6 text-foreground/85">
                 {settings.npmSqlitePath}
               </div>
-              <p className="mt-3 text-sm leading-6 text-muted">
-                Only change these if your local mount layout is different from the
-                default install contract.
+              <p className="mt-2 font-mono text-[0.62rem] leading-6 text-muted/70">
+                Only change these if your local mount layout differs from the default install.
               </p>
             </div>
           </div>
