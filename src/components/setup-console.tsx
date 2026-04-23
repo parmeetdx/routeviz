@@ -129,6 +129,7 @@ export default function SetupConsole({
     baselineOptions[0];
 
   const intervalOptions = [
+    { value: "0.5", label: "30s", note: "realtime" },
     { value: "2", label: "2m", note: "dense" },
     { value: "5", label: "5m", note: "default" },
     { value: "15", label: "15m", note: "lighter" },
@@ -143,7 +144,9 @@ export default function SetupConsole({
     : "manual snapshots only";
 
   const scheduleText = intervalEnabled
-    ? `Every ${intervalMinutes} minutes`
+    ? Number(intervalMinutes) < 1
+      ? `Every ${Math.round(Number(intervalMinutes) * 60)}s`
+      : `Every ${intervalMinutes}m`
     : "Manual only";
   const scheduleDetail = intervalEnabled
     ? `Keeps about ${retentionWindow} of local history.`
