@@ -70,44 +70,53 @@ export default function ServiceExplorer({
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <div className="grid min-h-dvh grid-rows-[auto_1fr]">
-        <header className="border-b border-border bg-panel/96 backdrop-blur">
-          <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4 px-5 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-7">
+        {/* ── Header ── */}
+        <header className="border-b border-border bg-panel/98 backdrop-blur sticky top-0 z-50">
+          <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3 px-5 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-7">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-8">
-              <div className="text-[1.95rem] font-semibold tracking-[-0.04em]">
-                Ops Ledger
-              </div>
+              <Link href="/" className="flex items-center gap-2 select-none">
+                <span className="font-mono text-accent text-lg font-bold tracking-widest"
+                  style={{ textShadow: "0 0 12px rgba(57,255,122,0.6)" }}>
+                  OPS-LEDGER
+                </span>
+                <span className="blink font-mono text-accent text-lg leading-none">▋</span>
+              </Link>
 
               {pageLinks?.length ? (
-                <nav className="flex gap-2 overflow-x-auto whitespace-nowrap pb-1 lg:pb-0">
+                <nav className="flex gap-1 overflow-x-auto whitespace-nowrap pb-1 lg:pb-0">
                   {pageLinks.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
                       className={cn(
-                        "rounded-full px-3 py-2 text-sm transition",
+                        "font-mono text-xs px-3 py-1.5 transition border",
                         item.href === pathname
-                          ? "bg-[#121922] text-foreground shadow-[inset_0_0_0_1px_rgba(66,153,225,0.24)]"
-                          : "text-muted hover:bg-[#121922] hover:text-foreground",
+                          ? "border-accent/50 bg-accent/10 text-accent"
+                          : "border-transparent text-muted hover:border-border hover:text-foreground/80",
                       )}
                     >
-                      {item.label}
+                      {item.href === pathname
+                        ? <span className="text-accent/60 mr-1">&gt;</span>
+                        : <span className="text-muted/40 mr-1">_</span>}
+                      {item.label.toLowerCase()}
                     </Link>
                   ))}
                 </nav>
               ) : null}
             </div>
 
-            <div className="flex items-center gap-3 text-sm text-muted">
-              <span className="inline-flex rounded-full border border-border/80 bg-[#121922] px-3 py-2 text-muted">
-                Last sync {model.lastSyncLabel}
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-xs border border-border/60 bg-panel-2 px-3 py-1.5 text-muted/80">
+                <span className="text-accent/50 mr-1">✓</span>sync {model.lastSyncLabel}
               </span>
             </div>
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1120px] px-5 py-6 sm:px-6 lg:px-7">
-          <div className="grid gap-6 xl:grid-cols-[17rem_minmax(0,1fr)]">
-            <aside className="hidden rounded-[1rem] border border-border bg-panel/92 shadow-[0_18px_48px_rgba(0,0,0,0.2)] xl:block xl:h-[calc(100dvh-11rem)] xl:overflow-hidden xl:sticky xl:top-6">
+        <main className="mx-auto w-full max-w-[1120px] px-5 py-5 sm:px-6 lg:px-7">
+          <div className="grid gap-5 xl:grid-cols-[16rem_minmax(0,1fr)]">
+            {/* ── Sidebar ── */}
+            <aside className="hidden border border-border bg-panel/95 shadow-[0_0_30px_rgba(57,255,122,0.04)] xl:block xl:h-[calc(100dvh-10rem)] xl:overflow-hidden xl:sticky xl:top-[4.5rem]">
               <ServiceRail
                 sections={serviceSections}
                 activeServiceId={activeService?.id ?? null}
@@ -117,45 +126,49 @@ export default function ServiceExplorer({
               />
             </aside>
 
+            {/* ── Detail panel ── */}
             <section className="min-h-0">
               {activeService ? (
                 <ServiceDetail service={activeService} />
               ) : (
-                <div className="rounded-[0.95rem] border border-border bg-panel px-5 py-5 text-sm text-muted">
-                  No services are available in the current snapshot yet.
+                <div className="border border-border bg-panel px-5 py-5 font-mono text-xs text-muted/70">
+                  <span className="text-accent/40 mr-1">$</span>
+                  No services available in current snapshot.
                 </div>
               )}
 
-              <div className="mt-6 xl:hidden">
-                <div className="rounded-[1rem] border border-border bg-panel/92 shadow-[0_18px_48px_rgba(0,0,0,0.18)]">
+              {/* Mobile inventory toggle */}
+              <div className="mt-5 xl:hidden">
+                <div className="border border-border bg-panel/95">
                   <button
                     type="button"
                     onClick={() => setMobileInventoryOpen((value) => !value)}
-                    className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left sm:px-5"
+                    className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left sm:px-5"
                   >
                     <div>
-                      <div className="font-mono text-[0.76rem] uppercase tracking-[0.2em] text-muted">
-                        Browse Services
+                      <div className="font-mono text-[0.65rem] uppercase tracking-[0.28em] text-muted/70">
+                        <span className="text-accent/50 mr-1">▸</span>
+                        SERVICE_MAP
                       </div>
-                      <div className="mt-2 text-lg font-semibold tracking-[-0.03em]">
+                      <div className="mt-1.5 font-mono text-sm font-bold tracking-tight">
                         Exposure inventory
                       </div>
-                      <p className="mt-1 text-sm text-muted">
-                        Search every route and switch the current service view.
+                      <p className="mt-0.5 font-mono text-xs text-muted/70">
+                        Search routes and switch the service view.
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
-                      <span className="rounded-full border border-border/80 bg-[#111820] px-3 py-1.5 text-sm text-muted">
+                      <span className="font-mono text-xs border border-border/60 bg-panel-2 px-2.5 py-1 text-muted/70 tabular-nums">
                         {visibleServices.length}
                       </span>
-                      <span className="text-lg text-muted">
+                      <span className="font-mono text-base text-muted">
                         {mobileInventoryOpen ? "−" : "+"}
                       </span>
                     </div>
                   </button>
 
                   {mobileInventoryOpen ? (
-                    <div className="border-t border-border/80">
+                    <div className="border-t border-border/60">
                       <ServiceRail
                         sections={serviceSections}
                         activeServiceId={activeService?.id ?? null}
@@ -193,37 +206,40 @@ function ServiceRail({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-border/80 px-4 py-4 sm:px-5">
-        <div className="font-mono text-[0.76rem] uppercase tracking-[0.2em] text-muted">
-          Service Map
+      {/* Rail header */}
+      <div className="border-b border-border/60 px-4 py-3 sm:px-4">
+        <div className="font-mono text-[0.62rem] uppercase tracking-[0.28em] text-muted/70">
+          <span className="text-accent/50 mr-1">▸</span>
+          SERVICE_MAP
         </div>
-        <div className="mt-3 flex items-end justify-between gap-4">
+        <div className="mt-2 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-[1.2rem] font-semibold tracking-[-0.03em]">
+            <h2 className="font-mono text-sm font-bold tracking-tight">
               Exposure inventory
             </h2>
-            <p className="mt-1 text-sm text-muted">
-              {visibleCount} service{visibleCount === 1 ? "" : "s"} in the current
-              snapshot
+            <p className="mt-0.5 font-mono text-[0.62rem] text-muted/70">
+              {visibleCount} service{visibleCount === 1 ? "" : "s"} in snapshot
             </p>
           </div>
         </div>
-        <label className="relative mt-4 block">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">
-            ⌕
+        {/* Search input */}
+        <label className="relative mt-3 block">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs text-accent/50">
+            $
           </span>
           <input
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search services..."
-            className="h-11 w-full rounded-[0.8rem] border border-border bg-[#0f1418] pl-10 pr-4 text-sm text-foreground outline-none transition placeholder:text-muted focus:border-accent/60"
+            placeholder="search services..."
+            className="h-9 w-full border border-border/70 bg-panel-2 pl-7 pr-4 font-mono text-xs text-foreground outline-none transition placeholder:text-muted/40 focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)]"
           />
         </label>
       </div>
 
+      {/* Rail items */}
       <div
         className={cn(
-          "min-h-0 space-y-5 px-3 py-3 sm:px-4",
+          "min-h-0 space-y-4 px-3 py-3",
           mobile ? "overflow-visible" : "overflow-y-auto",
         )}
       >
@@ -236,8 +252,9 @@ function ServiceRail({
         ))}
 
         {visibleCount === 0 ? (
-          <div className="rounded-[0.85rem] border border-dashed border-border px-4 py-5 text-sm text-muted">
-            No services match the current search.
+          <div className="border border-dashed border-border/50 px-4 py-4 font-mono text-xs text-muted/70">
+            <span className="text-accent/40 mr-1">$</span>
+            No services match current search.
           </div>
         ) : null}
       </div>
@@ -256,17 +273,17 @@ function ServiceSectionBlock({
     <section>
       <div className="mb-2 flex items-center justify-between gap-3 px-1">
         <div>
-          <div className="font-mono text-[0.72rem] uppercase tracking-[0.18em] text-muted">
+          <div className="font-mono text-[0.6rem] uppercase tracking-[0.22em] text-muted/60">
+            <span className="text-accent/40 mr-1">//</span>
             {section.label}
           </div>
-          <div className="mt-1 text-xs text-muted">{section.description}</div>
         </div>
-        <span className="rounded-full border border-border/80 bg-[#111820] px-2.5 py-1 text-xs text-muted">
+        <span className="font-mono text-[0.6rem] border border-border/50 bg-panel-2 px-2 py-0.5 text-muted/60 tabular-nums">
           {section.services.length}
         </span>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1">
         {section.services.map((service) => (
           <ServiceRailItem
             key={service.id}
@@ -295,33 +312,40 @@ function ServiceRailItem({
     <Link
       href={toDetailHref(service.href)}
       className={cn(
-        "group block rounded-[0.9rem] border border-border/80 px-4 py-3.5 transition",
+        "group block border px-3 py-2.5 transition",
         active
-          ? "border-accent/30 bg-[#10171d] shadow-[inset_2px_0_0_0_var(--color-accent)]"
-          : "bg-[#171d24] hover:bg-[#141b22]",
+          ? "border-accent/45 bg-panel-2 shadow-[inset_3px_0_0_0_var(--color-accent)]"
+          : "border-border/50 bg-panel/60 hover:border-accent/25 hover:bg-panel-2/60",
       )}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex min-w-0 items-start gap-3">
+          <div className="flex min-w-0 items-start gap-2">
             <span
               className={cn(
-                "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
+                "mt-1.5 h-1.5 w-1.5 shrink-0",
                 service.status === "online"
                   ? "bg-success"
                   : service.status === "warning"
                     ? "bg-warning"
                     : "bg-danger",
               )}
+              style={
+                service.status === "online"
+                  ? { boxShadow: "0 0 5px rgba(57,255,122,0.5)" }
+                  : service.status === "warning"
+                    ? { boxShadow: "0 0 5px rgba(255,184,0,0.5)" }
+                    : { boxShadow: "0 0 5px rgba(255,59,59,0.5)" }
+              }
             />
             <div className="min-w-0">
-              <div className="truncate text-[1rem] font-medium tracking-[-0.02em]">
+              <div className="font-mono text-xs font-bold tracking-tight truncate">
                 {service.label}
               </div>
-              <div className="mt-1 truncate text-sm text-muted">
+              <div className="mt-0.5 font-mono text-[0.6rem] text-muted/70 truncate">
                 {service.secondaryLabel}
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 {topFinding ? (
                   <FindingToneBadge
                     label={compactFindingTypeLabel(topFinding.type)}
@@ -329,7 +353,7 @@ function ServiceRailItem({
                     compact
                   />
                 ) : null}
-                <span className="text-xs text-muted">{metaLabel}</span>
+                <span className="font-mono text-[0.58rem] text-muted/60">{metaLabel}</span>
               </div>
             </div>
           </div>
@@ -398,11 +422,13 @@ function ServiceDetail({ service }: { service: ExplorerService }) {
   const hiddenImpactCount = service.impactItems.length - visibleImpactItems.length;
 
   return (
-    <div id="service-detail" className="space-y-6 lg:space-y-7">
-      <section>
+    <div id="service-detail" className="space-y-5">
+      {/* ── Service title block ── */}
+      <section className="border border-border bg-panel px-5 py-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h1 className="text-[1.9rem] font-semibold tracking-[-0.05em] text-balance sm:text-[2.4rem] lg:text-[3rem]">
+            <h1 className="font-mono text-[1.6rem] font-bold tracking-tight text-balance sm:text-[2rem] lg:text-[2.4rem]"
+              style={{ textShadow: "0 0 24px rgba(57,255,122,0.18)" }}>
               {service.label}
             </h1>
             {service.titleLinkHref ? (
@@ -410,12 +436,14 @@ function ServiceDetail({ service }: { service: ExplorerService }) {
                 href={service.titleLinkHref}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-4 inline-block break-all font-mono text-[0.9rem] text-accent transition hover:text-accent/80 sm:text-[1rem]"
+                className="mt-3 inline-block break-all font-mono text-sm text-accent transition hover:text-accent/75"
+                style={{ textShadow: "0 0 8px rgba(57,255,122,0.35)" }}
               >
                 {service.titleLinkLabel}
               </a>
             ) : (
-              <div className="mt-4 break-all font-mono text-[0.9rem] text-accent sm:text-[1rem]">
+              <div className="mt-3 break-all font-mono text-sm text-accent"
+                style={{ textShadow: "0 0 8px rgba(57,255,122,0.35)" }}>
                 {service.titleLinkLabel}
               </div>
             )}
@@ -428,26 +456,28 @@ function ServiceDetail({ service }: { service: ExplorerService }) {
           </div>
         </div>
 
-        <div className="mt-5 rounded-[0.85rem] border border-border bg-panel px-4 py-3 text-sm text-muted">
+        <div className="mt-4 border border-border/60 bg-panel-2 px-4 py-2.5 font-mono text-xs text-muted/80">
+          <span className="text-accent/40 mr-1">$</span>
           {service.summary}
         </div>
       </section>
 
+      {/* ── Findings ── */}
       {service.findings.length > 0 ? (
         <section>
-          <DetailCard title="Current Findings">
-            <div className="space-y-3">
+          <DetailCard title="CURRENT_FINDINGS">
+            <div className="border border-border/50 divide-y divide-border/40">
               {service.findings.map((finding) => (
                 <div
                   key={finding.id}
-                  className="rounded-[0.8rem] border border-border bg-panel-2 px-4 py-3.5"
+                  className="px-4 py-3 hover:bg-panel-2/40 transition"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-base font-semibold tracking-[-0.02em]">
+                      <div className="font-mono text-sm font-bold tracking-tight">
                         {compactFindingHeadline(finding.type)}
                       </div>
-                      <div className="mt-1 line-clamp-1 text-sm text-muted">
+                      <div className="mt-0.5 font-mono text-[0.65rem] text-muted/70 line-clamp-1">
                         {finding.evidence}
                       </div>
                     </div>
@@ -456,7 +486,7 @@ function ServiceDetail({ service }: { service: ExplorerService }) {
                       severity={finding.severity}
                     />
                   </div>
-                  <p className="mt-3 text-sm leading-6 text-foreground/92">
+                  <p className="mt-2 font-mono text-xs leading-6 text-foreground/80">
                     {compactFindingNextCheck(finding.type)}
                   </p>
                 </div>
@@ -466,17 +496,18 @@ function ServiceDetail({ service }: { service: ExplorerService }) {
         </section>
       ) : null}
 
+      {/* ── Exposure chain ── */}
       <section>
-        <SectionLabel>Exposure Chain</SectionLabel>
+        <SectionLabel>EXPOSURE_CHAIN</SectionLabel>
 
         {service.introLabel ? (
-          <div className="mt-4 flex items-center gap-3 text-base text-muted">
-            <span className="text-lg leading-none">◎</span>
+          <div className="mt-3 flex items-center gap-2 font-mono text-sm text-muted/80">
+            <span className="text-accent/50">◎</span>
             <span>{service.introLabel}</span>
           </div>
         ) : null}
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-3 space-y-2">
           {service.chainCards.map((card, index) => (
             <ChainRow
               key={card.id}
@@ -487,37 +518,42 @@ function ServiceDetail({ service }: { service: ExplorerService }) {
         </div>
       </section>
 
-      <section className="grid gap-5">
-        <DetailCard title="Risk Checks">
-          <div className="space-y-3">
+      {/* ── Risk + Impact + Notes ── */}
+      <section className="grid gap-4">
+        <DetailCard title="RISK_CHECKS">
+          <div className="space-y-2">
             {service.riskChecks.map((item) => (
               <RiskCheckRow key={item.label} item={item} />
             ))}
           </div>
         </DetailCard>
 
-        <DetailCard title="Change Impact">
-          <div className="space-y-3 text-sm leading-7 text-foreground/92">
-            <p className="text-muted">{service.impactHeading}</p>
-            <ul className="space-y-1 pl-5 text-foreground/92">
+        <DetailCard title="CHANGE_IMPACT">
+          <div className="space-y-2 font-mono text-xs leading-7 text-foreground/85">
+            <p className="text-muted/70">{service.impactHeading}</p>
+            <ul className="space-y-1 pl-5 list-none">
               {visibleImpactItems.map((item) => (
-                <li key={item}>{item}</li>
+                <li key={item} className="before:content-['>'] before:mr-2 before:text-accent/40">
+                  {item}
+                </li>
               ))}
             </ul>
             {hiddenImpactCount > 0 ? (
-              <p className="text-muted">
+              <p className="text-muted/70">
                 +{hiddenImpactCount} more service
-                {hiddenImpactCount === 1 ? "" : "s"} on this host in the current
-                snapshot.
+                {hiddenImpactCount === 1 ? "" : "s"} on this host in current snapshot.
               </p>
             ) : null}
           </div>
         </DetailCard>
 
-        <DetailCard title="Notes">
-          <div className="space-y-3 text-sm leading-7 text-muted">
+        <DetailCard title="NOTES">
+          <div className="space-y-2 font-mono text-xs leading-7 text-muted/70">
             {service.notes.map((note) => (
-              <p key={note}>{note}</p>
+              <p key={note}>
+                <span className="text-accent/30 mr-1">#</span>
+                {note}
+              </p>
             ))}
           </div>
         </DetailCard>
@@ -528,7 +564,8 @@ function ServiceDetail({ service }: { service: ExplorerService }) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="font-mono text-[0.78rem] uppercase tracking-[0.18em] text-muted">
+    <div className="font-mono text-[0.65rem] uppercase tracking-[0.28em] text-muted/70">
+      <span className="text-accent/40 mr-1">▸</span>
       {children}
     </div>
   );
@@ -542,26 +579,27 @@ function ChainRow({
   isLast: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[0.75rem_minmax(0,1fr)] gap-2 sm:grid-cols-[1.05rem_minmax(0,1fr)] sm:gap-4">
+    <div className="grid grid-cols-[0.7rem_minmax(0,1fr)] gap-2 sm:grid-cols-[1rem_minmax(0,1fr)] sm:gap-3">
       <div className="flex flex-col items-center pt-2">
-        <span className="h-2 w-2 rounded-full bg-[#455161]" />
+        <span className="h-2 w-2 border border-accent/35 bg-accent/15" />
         {!isLast ? (
           <>
-            <span className="my-1 h-8 border-l border-dashed border-[#4b5766]" />
-            <span className="h-2 w-2 rounded-full bg-[#455161]" />
+            <span className="my-1 h-6 border-l border-dashed border-border/50" />
+            <span className="h-2 w-2 border border-accent/35 bg-accent/15" />
           </>
         ) : null}
       </div>
-      <div className="rounded-[0.8rem] border border-border bg-panel px-3 py-4 shadow-[0_10px_28px_rgba(0,0,0,0.18)] sm:px-4">
-        <div className="text-sm text-muted">{card.title}</div>
+      <div className="border border-border/60 bg-panel px-3 py-3 sm:px-4">
+        <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">{card.title}</div>
         <div
           className={cn(
-            "mt-3 space-y-2 break-words text-[0.92rem] leading-7 text-foreground/94 sm:text-[1rem]",
-            card.mono && "font-mono text-[0.84rem] leading-6 sm:text-[0.96rem]",
+            "mt-2 space-y-1.5 break-words text-xs leading-6 text-foreground/90",
+            card.mono && "font-mono text-[0.72rem] leading-5",
           )}
         >
           {card.lines.map((line) => (
             <div key={line} className={card.mono ? "break-all" : "break-words"}>
+              {card.mono ? <span className="text-accent/30 mr-1">$</span> : null}
               {line}
             </div>
           ))}
@@ -579,29 +617,40 @@ function DetailCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-[0.85rem] border border-border bg-panel px-4 py-4 shadow-[0_10px_28px_rgba(0,0,0,0.14)] sm:px-5">
-      <SectionLabel>{title}</SectionLabel>
-      <div className="mt-4">{children}</div>
+    <section className="border border-border bg-panel px-4 py-4 sm:px-5">
+      <div className="flex items-center gap-3 mb-3 pb-2.5 border-b border-border/50">
+        <span className="font-mono text-accent/40 text-xs">▸</span>
+        <span className="font-mono text-[0.65rem] uppercase tracking-[0.28em] text-muted/70">{title}</span>
+        <div className="flex-1 border-t border-border/40" />
+      </div>
+      {children}
     </section>
   );
 }
 
 function RiskCheckRow({ item }: { item: ExplorerRiskCheck }) {
   return (
-    <div className="flex items-start gap-3 text-sm leading-6 sm:leading-7">
+    <div className="flex items-start gap-2 font-mono text-xs leading-6">
       <span
         className={cn(
-          "mt-0.5 block h-5 w-5 text-center text-base leading-5",
+          "mt-0.5 shrink-0 font-bold",
           item.state === "ok"
             ? "text-success"
             : item.state === "danger"
               ? "text-danger"
               : "text-warning",
         )}
+        style={
+          item.state === "ok"
+            ? { textShadow: "0 0 5px rgba(57,255,122,0.5)" }
+            : item.state === "danger"
+              ? { textShadow: "0 0 5px rgba(255,59,59,0.5)" }
+              : { textShadow: "0 0 5px rgba(255,184,0,0.5)" }
+        }
       >
         {item.state === "ok" ? "✓" : "!"}
       </span>
-      <span className="text-foreground/94">{item.label}</span>
+      <span className="text-foreground/85">{item.label}</span>
     </div>
   );
 }
@@ -618,11 +667,11 @@ function FindingToneBadge({
   return (
     <span
       className={cn(
-        "inline-flex rounded-[0.45rem] border leading-none",
-        compact ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm",
-        severity === "high" && "border-danger/25 bg-danger/14 text-danger",
-        severity === "medium" && "border-warning/25 bg-warning/14 text-warning",
-        severity === "low" && "border-accent/25 bg-accent/16 text-accent",
+        "inline-flex border font-mono uppercase tracking-wider leading-none",
+        compact ? "px-2 py-0.5 text-[0.58rem]" : "px-2.5 py-1 text-[0.65rem]",
+        severity === "high" && "border-danger/40 bg-danger/10 text-danger",
+        severity === "medium" && "border-warning/40 bg-warning/10 text-warning",
+        severity === "low" && "border-accent/30 bg-accent/10 text-accent",
       )}
     >
       {label}
@@ -638,13 +687,13 @@ function Badge({
   return (
     <span
       className={cn(
-        "inline-flex rounded-[0.45rem] border leading-none",
-        compact ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm",
-        tone === "info" && "border-accent/25 bg-accent/16 text-accent",
-        tone === "success" && "border-success/25 bg-success/14 text-success",
-        tone === "warning" && "border-warning/25 bg-warning/14 text-warning",
-        tone === "danger" && "border-danger/25 bg-danger/14 text-danger",
-        tone === "muted" && "border-border bg-[#202731] text-[#c5ced8]",
+        "inline-flex border font-mono uppercase tracking-wider leading-none",
+        compact ? "px-2 py-0.5 text-[0.58rem]" : "px-2.5 py-1 text-[0.65rem]",
+        tone === "info" && "border-accent/35 bg-accent/10 text-accent",
+        tone === "success" && "border-success/35 bg-success/10 text-success",
+        tone === "warning" && "border-warning/35 bg-warning/10 text-warning",
+        tone === "danger" && "border-danger/35 bg-danger/10 text-danger",
+        tone === "muted" && "border-border/60 bg-panel-2 text-muted/70",
       )}
     >
       {label}

@@ -40,28 +40,28 @@ export function OverviewStatusBoard({
 }: OverviewStatusBoardProps) {
   const statTiles = [
     {
-      label: "Critical",
+      label: "CRITICAL",
       value: String(criticalCount),
       note: "open critical queue",
       tone: criticalCount > 0 ? "danger" : "muted",
       href: "/findings?bucket=critical",
     },
     {
-      label: "Expired certs",
+      label: "CERT_EXP",
       value: String(expiredCertificateCount),
       note: "open expired certs",
       tone: expiredCertificateCount > 0 ? "danger" : "muted",
       href: "/findings?bucket=certificate_expired",
     },
     {
-      label: "Broken routes",
+      label: "BROKEN",
       value: String(unmatchedTargetCount),
       note: "open broken routes",
       tone: unmatchedTargetCount > 0 ? "warning" : "muted",
       href: "/findings?bucket=unmatched_target",
     },
     {
-      label: "Mgmt surfaces",
+      label: "MGMT_SRF",
       value: String(managementSurfaceCount),
       note: "open management surfaces",
       tone: managementSurfaceCount > 0 ? "warning" : "muted",
@@ -70,59 +70,93 @@ export function OverviewStatusBoard({
   ] as const;
 
   return (
-    <section className="rounded-[1rem] border border-border bg-panel px-4 py-4 shadow-[0_18px_44px_rgba(0,0,0,0.18)] sm:px-5 sm:py-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="border border-border bg-panel shadow-[0_0_40px_rgba(57,255,122,0.04)]">
+      {/* ── Board header ── */}
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 px-4 py-3 sm:px-5">
         <div>
-          <div className="font-mono text-[0.78rem] uppercase tracking-[0.2em] text-muted">
-            Overview
+          <div className="flex items-center gap-2 font-mono text-[0.65rem] uppercase tracking-[0.3em] text-muted/70 mb-2">
+            <span className="text-accent/50">##</span>
+            <span>SYSTEM OVERVIEW</span>
+            <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
           </div>
-          <h2 className="mt-2 text-[1.12rem] font-semibold tracking-[-0.04em] text-balance sm:text-[1.38rem]">
+          <h2 className="font-mono text-base font-bold text-foreground tracking-tight sm:text-lg"
+            style={{ textShadow: "0 0 16px rgba(57,255,122,0.2)" }}>
             {statusLine}
           </h2>
-          <p className="mt-2 text-sm text-muted">{scanSummary}</p>
+          <p className="mt-1 font-mono text-xs text-muted">{scanSummary}</p>
         </div>
         <Link
           href="/findings"
-          className="inline-flex items-center rounded-full border border-border bg-panel-2 px-3 py-2 text-sm text-muted transition hover:border-accent/28 hover:text-foreground"
+          className="font-mono text-xs border border-accent/25 bg-accent/8 px-3 py-1.5 text-accent transition hover:bg-accent/15 hover:border-accent/50"
+          style={{ textShadow: "0 0 6px rgba(57,255,122,0.35)" }}
         >
-          Open all findings
+          [view all findings]
         </Link>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+      {/* ── Stat tiles ── */}
+      <div className="grid grid-cols-2 gap-px bg-border/40 xl:grid-cols-4">
         {statTiles.map((tile) => (
           <OverviewStatTile key={tile.label} {...tile} />
         ))}
       </div>
 
-      <div className="mt-4 text-xs text-muted sm:text-sm">
-        Tiles open the live queue, then each item drills into its service path.
+      {/* ── Hint text ── */}
+      <div className="border-t border-b border-border/50 px-4 py-2 font-mono text-[0.65rem] text-muted/60 sm:px-5">
+        <span className="text-accent/30 mr-1">$</span>
+        Tiles drill into the live queue → each item traces its service path.
       </div>
 
-      <div className="mt-5 rounded-[0.95rem] border border-border bg-panel-2">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div>
-            <div className="text-sm font-medium text-foreground">Needs attention now</div>
-            <div className="mt-1 text-xs text-muted">
-              Top issues from the current snapshot.
+      {/* ── Needs attention table ── */}
+      <div>
+        {/* Distinct table header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-panel-2 px-4 py-2.5 sm:px-5">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[0.65rem] text-accent/60">▸</span>
+            <div>
+              <div className="font-mono text-xs font-bold text-foreground tracking-widest uppercase">
+                NEEDS ATTENTION
+              </div>
+              <div className="font-mono text-[0.62rem] text-muted/70 mt-0.5">
+                Top issues · current snapshot
+              </div>
             </div>
           </div>
           <Link
             href="/findings?bucket=critical"
-            className="inline-flex items-center rounded-full border border-danger/25 bg-danger/10 px-3 py-1.5 text-xs text-danger transition hover:border-danger/40"
+            className={cn(
+              "font-mono text-xs border px-3 py-1.5 transition",
+              criticalCount > 0
+                ? "border-danger/40 bg-danger/10 text-danger glow-pulse-danger hover:bg-danger/18"
+                : "border-border/60 bg-panel text-muted hover:border-border",
+            )}
           >
-            Open critical queue
+            {criticalCount > 0 ? `[${criticalCount} critical]` : "[open queue]"}
           </Link>
         </div>
 
+        {/* Column header row */}
         {urgentItems.length > 0 ? (
-          <div className="divide-y divide-border">
-            {urgentItems.map((item) => (
-              <UrgentItemRow key={item.id} item={item} />
-            ))}
-          </div>
+          <>
+            <div className="hidden md:grid md:grid-cols-[1fr_auto] border-b border-border/40 bg-panel-2/60 px-4 py-1.5 sm:px-5">
+              <div className="font-mono text-[0.6rem] uppercase tracking-[0.28em] text-muted/50">
+                SERVICE / FINDING / EVIDENCE
+              </div>
+              <div className="font-mono text-[0.6rem] uppercase tracking-[0.28em] text-muted/50 text-right pr-16">
+                NEXT CHECK
+              </div>
+            </div>
+            <div className="divide-y divide-border/40">
+              {urgentItems.map((item) => (
+                <UrgentItemRow key={item.id} item={item} />
+              ))}
+            </div>
+          </>
         ) : (
-          <div className="px-4 py-4 text-sm text-muted">No urgent findings are active right now.</div>
+          <div className="px-4 py-4 font-mono text-xs text-muted/70">
+            <span className="text-accent/40 mr-1">✓</span>
+            No urgent findings active in current snapshot.
+          </div>
         )}
       </div>
     </section>
@@ -145,25 +179,35 @@ function OverviewStatTile({
   return (
     <Link
       href={href}
-      className="rounded-[0.95rem] border border-border bg-panel-2 px-4 py-3 transition hover:border-accent/28 hover:bg-[#1c232c] sm:py-4"
+      className={cn(
+        "group flex items-center gap-3 bg-panel px-4 py-3 transition hover:bg-panel-2 sm:py-4",
+        tone === "danger" && "hover:shadow-[inset_0_0_0_1px_rgba(255,59,59,0.35)]",
+        tone === "warning" && "hover:shadow-[inset_0_0_0_1px_rgba(255,184,0,0.35)]",
+        tone === "muted" && "hover:shadow-[inset_0_0_0_1px_rgba(57,255,122,0.12)]",
+      )}
     >
-      <div className="flex items-center gap-3">
-        <span
-          className={cn(
-            "flex h-10 w-10 items-center justify-center rounded-[0.75rem] text-sm font-semibold sm:h-11 sm:w-11",
-            tone === "danger" && "bg-danger/16 text-danger",
-            tone === "warning" && "bg-warning/16 text-warning",
-            tone === "muted" && "bg-[#1a2129] text-[#95a2b3]",
-          )}
-        >
-          {value}
-        </span>
-        <div>
-          <div className="text-[0.98rem] font-medium text-foreground sm:text-base">
-            {label}
-          </div>
-          <div className="mt-1 text-xs text-muted sm:text-sm">{note}</div>
+      <span
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center font-mono text-base font-bold border",
+          tone === "danger" && "border-danger/40 bg-danger/12 text-danger",
+          tone === "warning" && "border-warning/40 bg-warning/12 text-warning",
+          tone === "muted" && "border-border bg-panel-2 text-muted/60",
+        )}
+        style={
+          tone === "danger" && value !== "0"
+            ? { boxShadow: "0 0 10px rgba(255,59,59,0.3)" }
+            : tone === "warning" && value !== "0"
+              ? { boxShadow: "0 0 10px rgba(255,184,0,0.25)" }
+              : undefined
+        }
+      >
+        {value}
+      </span>
+      <div className="min-w-0">
+        <div className="font-mono text-[0.7rem] font-bold uppercase tracking-widest text-foreground/80 truncate">
+          {label}
         </div>
+        <div className="font-mono text-[0.62rem] text-muted/70 truncate">{note}</div>
       </div>
     </Link>
   );
@@ -173,25 +217,41 @@ function UrgentItemRow({ item }: { item: OverviewUrgentItem }) {
   return (
     <Link
       href={item.href}
-      className="block px-4 py-3 transition hover:bg-[#1b222b]"
+      className="group block px-4 py-3 transition hover:bg-panel-2/70 sm:px-5"
     >
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-foreground">{item.serviceLabel}</span>
+            {/* Severity dot */}
+            <span
+              className={cn(
+                "h-1.5 w-1.5 shrink-0 rounded-full",
+                item.severity === "high" && "bg-danger",
+                item.severity === "medium" && "bg-warning",
+                item.severity === "low" && "bg-accent",
+              )}
+            />
+            <span className="font-mono text-sm font-bold text-foreground">{item.serviceLabel}</span>
             <SeverityBadge severity={item.severity}>
               {compactFindingTypeLabel(item.findingType)}
             </SeverityBadge>
-            <span className="text-xs text-muted">{item.secondaryLabel}</span>
+            <span className="font-mono text-[0.65rem] text-muted/70">{item.secondaryLabel}</span>
           </div>
-          <div className="mt-2 text-sm text-foreground/92">{truncate(item.evidence, 96)}</div>
+          <div className="mt-1.5 font-mono text-xs text-foreground/75 leading-5">
+            {truncate(item.evidence, 100)}
+          </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="rounded-full border border-border/80 bg-[#111820] px-3 py-1.5 text-xs text-muted">
+        <div className="flex shrink-0 items-center gap-3 md:gap-2">
+          <span className="font-mono text-[0.65rem] uppercase tracking-wider text-muted/60">
             {item.nextCheck}
           </span>
-          <span className="text-sm text-accent">Open</span>
+          <span
+            className="font-mono text-xs text-accent group-hover:underline"
+            style={{ textShadow: "0 0 6px rgba(57,255,122,0.3)" }}
+          >
+            open→
+          </span>
         </div>
       </div>
     </Link>
@@ -208,10 +268,10 @@ function SeverityBadge({
   return (
     <span
       className={cn(
-        "inline-flex rounded-[0.45rem] border px-2.5 py-1 text-xs leading-none",
-        severity === "high" && "border-danger/25 bg-danger/14 text-danger",
-        severity === "medium" && "border-warning/25 bg-warning/14 text-warning",
-        severity === "low" && "border-accent/25 bg-accent/16 text-accent",
+        "inline-flex border font-mono px-2 py-0.5 text-[0.62rem] uppercase tracking-wider leading-none",
+        severity === "high" && "border-danger/40 bg-danger/12 text-danger",
+        severity === "medium" && "border-warning/40 bg-warning/12 text-warning",
+        severity === "low" && "border-accent/30 bg-accent/10 text-accent",
       )}
     >
       {children}
