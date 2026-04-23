@@ -820,21 +820,11 @@ async function matchRouteToWorkload(
     } satisfies MatchResult;
   }
 
-  if (!hostLike) {
-    return {
-      matchState: "off_host",
-      confidence: "unknown",
-      workload: null,
-      relatedWorkloads: [],
-      notes: `Target ${targetHost}:${targetPort} points away from the scanned Docker host.`,
-    } satisfies MatchResult;
-  }
-
-  // No Docker workload claims this port — probe it directly. If the port
-  // answers we're looking at a bare-metal / OS-level service (Cockpit,
-  // Home Assistant on host, etc.). Mark it "direct" so it doesn't raise a
-  // NO LIVE TARGET finding — the service is genuinely running.
-  const portOpen = await probeTcpPort(targetHost === "0.0.0.0" ? "127.0.0.1" : targetHost, targetPort);
+  // No Docker workload claimed this port. Probe the target directly — covers
+  // both local host-like targets (127.0.0.1, 0.0.0.0) and LAN IPs like
+  // 192.168.1.x that point to the same machine or another host on the network.
+  const probeHost = targetHost === "0.0.0.0" ? "127.0.0.1" : targetHost;
+  const portOpen = await probeTcpPort(probeHost, targetPort);
 
   if (portOpen) {
     return {
@@ -842,7 +832,17 @@ async function matchRouteToWorkload(
       confidence: "high",
       workload: null,
       relatedWorkloads: [],
-      notes: `No Docker workload claims ${targetHost}:${targetPort}, but the port is open — bare-metal or OS-level service.`,
+      notes: `No Docker workload claims ${targetHost}:${targetPort}, but the port is open — bare-metal, OS-level, or network service.`,
+    } satisfies MatchResult;
+  }
+
+  if (!hostLike) {
+    return {
+      matchState: "off_host",
+      confidence: "unknown",
+      workload: null,
+      relatedWorkloads: [],
+      notes: `Target ${targetHost}:${targetPort} points away from the scanned Docker host.`,
     } satisfies MatchResult;
   }
 

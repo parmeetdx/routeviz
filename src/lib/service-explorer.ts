@@ -156,15 +156,27 @@ function buildPublicService(
     route.tlsDaysRemaining !== null && typeof route.tlsDaysRemaining === "number"
       ? route.tlsDaysRemaining >= 0
       : false;
+  const targetParts = splitTarget(route.target, route.privatePort);
+  // true when matchState is "direct" AND the forward host is not this machine
+  const isRemoteDirectTarget =
+    route.matchState === "direct" &&
+    !!targetParts.host &&
+    targetParts.host !== "localhost" &&
+    targetParts.host !== "127.0.0.1" &&
+    targetParts.host !== "0.0.0.0" &&
+    targetParts.host !== snapshot.hostAddress;
   const riskChecks: ExplorerRiskCheck[] = [
     {
       label: "Public DNS resolves",
       state: dnsOkay ? "ok" : "warn",
     },
     {
-      label: route.matchState === "direct"
-        ? "Port open (bare-metal service)"
-        : "NPM target reachable",
+      label:
+        route.matchState !== "direct"
+          ? "NPM target reachable"
+          : isRemoteDirectTarget
+            ? "Port open (network service)"
+            : "Port open (bare-metal service)",
       state: targetOkay ? "ok" : "warn",
     },
     {
@@ -202,7 +214,6 @@ function buildPublicService(
     allContainersRunning,
     workloadCount: workloads.length,
   });
-  const targetParts = splitTarget(route.target, route.privatePort);
   const storagePaths = getStoragePaths(workloads);
   const certificateLabel = formatCertificateBadge(route);
   const composePath = workloads.find((workload) => workload.composePath)?.composePath;
@@ -271,21 +282,29 @@ function buildPublicService(
         title: "Docker Host",
         lines: [
           `${snapshot.hostLabel} / ${snapshot.hostAddress}`,
-          ...(route.matchState === "direct"
-            ? ["Not Dockerised — runs directly on the host OS"]
-            : [composePath ? `Compose: ${composePath}` : "Compose: path not detected"]),
+          route.matchState !== "direct"
+            ? (composePath ? `Compose: ${composePath}` : "Compose: path not detected")
+            : isRemoteDirectTarget
+              ? `Proxies to ${targetParts.host} — service runs on a separate host`
+              : "Not Dockerised — runs directly on the host OS",
         ],
       },
       ...(route.matchState === "direct"
         ? [
             {
               id: "bare-metal",
-              title: "Bare-Metal Service",
-              lines: [
-                `Port ${targetParts.port ?? route.privatePort} is open on the host`,
-                "No Docker workload matched — systemd, snap, or native OS process",
-                "Container columns are not applicable for this service",
-              ],
+              title: isRemoteDirectTarget ? "Network Service" : "Bare-Metal Service",
+              lines: isRemoteDirectTarget
+                ? [
+                    `Port ${targetParts.port ?? route.privatePort} is open on ${targetParts.host}`,
+                    "Service is on a separate network host (not this Docker machine)",
+                    "Container columns are not applicable for this service",
+                  ]
+                : [
+                    `Port ${targetParts.port ?? route.privatePort} is open on the host`,
+                    "No Docker workload matched — systemd, snap, or native OS process",
+                    "Container columns are not applicable for this service",
+                  ],
               mono: true,
             } satisfies ExplorerChainCard,
           ]
