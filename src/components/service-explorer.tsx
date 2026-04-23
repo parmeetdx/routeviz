@@ -578,19 +578,44 @@ function ChainRow({
   card: ExplorerChainCard;
   isLast: boolean;
 }) {
+  const isBareMetalCard = card.id === "bare-metal";
+
   return (
-    <div className="grid grid-cols-[0.7rem_minmax(0,1fr)] gap-2 sm:grid-cols-[1rem_minmax(0,1fr)] sm:gap-3">
-      <div className="flex flex-col items-center pt-2">
-        <span className="h-2 w-2 border border-accent/35 bg-accent/15" />
+    <div className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-3 sm:grid-cols-[1.5rem_minmax(0,1fr)] sm:gap-4">
+      {/* ── Connector column ── */}
+      <div className="flex flex-col items-center">
+        {/* top dot */}
+        <div
+          className="mt-2 h-3 w-3 shrink-0 border-2 border-accent/70 bg-accent/25"
+          style={{ boxShadow: "0 0 6px rgba(57,255,122,0.45)" }}
+        />
+        {/* dashed line to next row */}
         {!isLast ? (
-          <>
-            <span className="my-1 h-6 border-l border-dashed border-border/50" />
-            <span className="h-2 w-2 border border-accent/35 bg-accent/15" />
-          </>
+          <div
+            className="mt-1 flex-1 w-px"
+            style={{
+              background: "repeating-linear-gradient(to bottom, rgba(57,255,122,0.5) 0px, rgba(57,255,122,0.5) 4px, transparent 4px, transparent 8px)",
+              minHeight: "1.5rem",
+            }}
+          />
         ) : null}
       </div>
-      <div className="border border-border/60 bg-panel px-3 py-3 sm:px-4">
-        <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">{card.title}</div>
+
+      {/* ── Card column ── */}
+      <div
+        className={cn(
+          "mb-2 border px-3 py-3 sm:px-4",
+          isBareMetalCard
+            ? "border-warning/30 bg-warning/5"
+            : "border-border/60 bg-panel",
+        )}
+      >
+        <div className={cn(
+          "font-mono text-[0.62rem] uppercase tracking-wider",
+          isBareMetalCard ? "text-warning/70" : "text-muted/60",
+        )}>
+          {card.title}
+        </div>
         <div
           className={cn(
             "mt-2 space-y-1.5 break-words text-xs leading-6 text-foreground/90",
@@ -599,7 +624,9 @@ function ChainRow({
         >
           {card.lines.map((line) => (
             <div key={line} className={card.mono ? "break-all" : "break-words"}>
-              {card.mono ? <span className="text-accent/30 mr-1">$</span> : null}
+              {card.mono ? (
+                <span className={cn("mr-1", isBareMetalCard ? "text-warning/40" : "text-accent/30")}>$</span>
+              ) : null}
               {line}
             </div>
           ))}

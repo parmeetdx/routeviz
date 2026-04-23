@@ -3,6 +3,7 @@ import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import http from "node:http";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -684,7 +685,27 @@ function isHostLikeTarget(
   );
 }
 
-function matchRouteToWorkload(
+function probeTcpPort(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+
+    const done = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(result);
+    };
+
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => done(true));
+    socket.once("timeout", () => done(false));
+    socket.once("error", () => done(false));
+    socket.connect(port, host);
+  });
+}
+
+async function matchRouteToWorkload(
   route: CanonicalRoute,
   workloads: DockerWorkload[],
   settings: PersistedSettings,
@@ -806,6 +827,22 @@ function matchRouteToWorkload(
       workload: null,
       relatedWorkloads: [],
       notes: `Target ${targetHost}:${targetPort} points away from the scanned Docker host.`,
+    } satisfies MatchResult;
+  }
+
+  // No Docker workload claims this port — probe it directly. If the port
+  // answers we're looking at a bare-metal / OS-level service (Cockpit,
+  // Home Assistant on host, etc.). Mark it "direct" so it doesn't raise a
+  // NO LIVE TARGET finding — the service is genuinely running.
+  const portOpen = await probeTcpPort(targetHost === "0.0.0.0" ? "127.0.0.1" : targetHost, targetPort);
+
+  if (portOpen) {
+    return {
+      matchState: "direct",
+      confidence: "high",
+      workload: null,
+      relatedWorkloads: [],
+      notes: `No Docker workload claims ${targetHost}:${targetPort}, but the port is open — bare-metal or OS-level service.`,
     } satisfies MatchResult;
   }
 
@@ -1196,7 +1233,7 @@ async function buildSnapshot(settings: PersistedSettings) {
 
       const routeResults = await Promise.all(
         canonicalRoutes.map(async (route) => {
-          const match = matchRouteToWorkload(
+          const match = await matchRouteToWorkload(
             route,
             workloads,
             settings,
