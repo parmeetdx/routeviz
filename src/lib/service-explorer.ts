@@ -151,7 +151,7 @@ function buildPublicService(
     workloads.length > 0 &&
     workloads.every((workload) => workload.state.toLowerCase() === "running");
   const dnsOkay = route.dnsAnswers.length > 0;
-  const targetOkay = route.matchState === "matched";
+  const targetOkay = route.matchState === "matched" || route.matchState === "direct";
   const tlsOkay =
     route.tlsDaysRemaining !== null && typeof route.tlsDaysRemaining === "number"
       ? route.tlsDaysRemaining >= 0
@@ -162,7 +162,9 @@ function buildPublicService(
       state: dnsOkay ? "ok" : "warn",
     },
     {
-      label: "NPM target reachable",
+      label: route.matchState === "direct"
+        ? "Port open (bare-metal service)"
+        : "NPM target reachable",
       state: targetOkay ? "ok" : "warn",
     },
     {
@@ -240,7 +242,9 @@ function buildPublicService(
           ]
         : []),
     ],
-    summary: `${1 + 5} hops · ${containerCount} container${containerCount === 1 ? "" : "s"} · ${warningCount} warning${warningCount === 1 ? "" : "s"}`,
+    summary: route.matchState === "direct"
+      ? `${1 + 5} hops · bare-metal service · ${warningCount} warning${warningCount === 1 ? "" : "s"}`
+      : `${1 + 5} hops · ${containerCount} container${containerCount === 1 ? "" : "s"} · ${warningCount} warning${warningCount === 1 ? "" : "s"}`,
     hostLabel: snapshot.hostLabel,
     hostAddress: snapshot.hostAddress,
     introLabel: "Internet",
@@ -267,24 +271,41 @@ function buildPublicService(
         title: "Docker Host",
         lines: [
           `${snapshot.hostLabel} / ${snapshot.hostAddress}`,
-          composePath ? `Compose: ${composePath}` : "Compose: path not detected",
+          ...(route.matchState === "direct"
+            ? ["Not Dockerised — runs directly on the host OS"]
+            : [composePath ? `Compose: ${composePath}` : "Compose: path not detected"]),
         ],
       },
-      {
-        id: "containers",
-        title: "Containers",
-        lines: getContainerLines(workloads),
-        mono: true,
-      },
-      {
-        id: "storage",
-        title: "Storage",
-        lines:
-          storagePaths.length > 0
-            ? storagePaths
-            : ["No persistent bind mounts detected on the matched stack."],
-        mono: true,
-      },
+      ...(route.matchState === "direct"
+        ? [
+            {
+              id: "bare-metal",
+              title: "Bare-Metal Service",
+              lines: [
+                `Port ${targetParts.port ?? route.privatePort} is open on the host`,
+                "No Docker workload matched — systemd, snap, or native OS process",
+                "Container columns are not applicable for this service",
+              ],
+              mono: true,
+            } satisfies ExplorerChainCard,
+          ]
+        : [
+            {
+              id: "containers",
+              title: "Containers",
+              lines: getContainerLines(workloads),
+              mono: true,
+            } satisfies ExplorerChainCard,
+            {
+              id: "storage",
+              title: "Storage",
+              lines:
+                storagePaths.length > 0
+                  ? storagePaths
+                  : ["No persistent bind mounts detected on the matched stack."],
+              mono: true,
+            } satisfies ExplorerChainCard,
+          ]),
     ],
     riskChecks,
     impactHeading: `If ${snapshot.hostLabel} / ${snapshot.hostAddress} goes down:`,
@@ -363,9 +384,7 @@ function buildInternalService(
   const status =
     allContainersRunning && workloads.length > 0
       ? "online"
-      : workloads.some((workload) => workload.state.toLowerCase() === "running")
-        ? "warning"
-        : "offline";
+      : "warning";
   const storagePaths = getStoragePaths(workloads);
   const composePath = workloads.find((workload) => workload.composePath)?.composePath;
 
@@ -733,11 +752,11 @@ function getServiceStatus(input: {
     return "online";
   }
 
-  if (input.targetOkay || input.workloadCount > 0) {
-    return "warning";
-  }
-
-  return "offline";
+  // "offline" would require a positive health-check failure, which the scanner
+  // doesn't perform. Bare-metal / OS-level services (Cockpit, Home Assistant on
+  // host, etc.) have no Docker workload but are perfectly reachable. The worst
+  // we can honestly say without a probe is "warning".
+  return "warning";
 }
 
 function formatLastSyncLabel(value: string) {
