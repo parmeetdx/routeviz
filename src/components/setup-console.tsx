@@ -72,6 +72,14 @@ export default function SetupConsole({
   const [intervalMinutes, setIntervalMinutes] = useState(
     String(settings.scanConfig.intervalMinutes),
   );
+  const [authOverrides, setAuthOverrides] = useState(
+    (settings.authOverrides ?? []).join("\n"),
+  );
+  const [webhookEnabled, setWebhookEnabled] = useState(settings.webhookConfig?.enabled ?? false);
+  const [webhookUrl, setWebhookUrl] = useState(settings.webhookConfig?.url ?? "");
+  const [webhookThreshold, setWebhookThreshold] = useState<"high" | "high_medium">(
+    settings.webhookConfig?.severityThreshold ?? "high",
+  );
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
@@ -192,12 +200,23 @@ export default function SetupConsole({
             intervalEnabled,
             intervalMinutes: Number(intervalMinutes),
           },
+          webhookConfig: {
+            enabled: webhookEnabled,
+            url: webhookUrl.trim(),
+            severityThreshold: webhookThreshold,
+          },
+          authOverrides: authOverrides
+            .split("\n")
+            .map((s) => s.trim())
+            .filter(Boolean),
         }),
       });
 
       if (!response.ok) {
         throw new Error("Saving setup failed.");
       }
+
+      await fetch("/api/scan", { method: "POST" });
 
       setStatus("saved");
       router.refresh();
@@ -413,6 +432,107 @@ export default function SetupConsole({
                   <span className="text-accent/40 mr-1">$</span>
                   {scheduleDetail}
                 </div>
+              </div>
+            </section>
+          </div>
+
+          {/* ── Webhook alerts ── */}
+          <div className="space-y-3">
+            <section className="border border-border/60 bg-panel">
+              <div className="border-b border-border/40 px-4 py-2.5">
+                <p className="font-mono text-[0.62rem] uppercase tracking-[0.26em] text-muted/70">
+                  <span className="text-accent/40 mr-1">▸</span>WEBHOOK_ALERTS
+                </p>
+              </div>
+              <div className="px-4 py-4 space-y-4">
+                <p className="font-mono text-xs text-muted/70 leading-relaxed max-w-sm">
+                  POST to a URL when new findings appear. Works with Slack, Discord, ntfy, or any HTTP endpoint.
+                </p>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={webhookEnabled}
+                    onChange={(e) => setWebhookEnabled(e.target.checked)}
+                    className="accent-accent h-3.5 w-3.5"
+                  />
+                  <span className="font-mono text-xs text-foreground/80">Enable webhook alerts</span>
+                  <span className={`ml-auto font-mono text-xs ${webhookEnabled ? "text-accent" : "text-muted/50"}`}>
+                    {webhookEnabled ? "ON" : "OFF"}
+                  </span>
+                </label>
+                <div className="space-y-1">
+                  <label className="font-mono text-[0.65rem] uppercase tracking-widest text-muted/50">
+                    Webhook URL
+                  </label>
+                  <input
+                    type="url"
+                    value={webhookUrl}
+                    onChange={(e) => setWebhookUrl(e.target.value)}
+                    placeholder="https://your-server.example.com/webhook"
+                    disabled={!webhookEnabled}
+                    className="w-full border border-border/50 bg-panel-2 px-3 py-2 font-mono text-xs text-foreground/80 placeholder:text-muted/30 focus:outline-none focus:border-accent/40 disabled:opacity-40"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="font-mono text-[0.65rem] uppercase tracking-widest text-muted/50">
+                    Severity threshold
+                  </p>
+                  <div className="flex gap-2">
+                    {(["high", "high_medium"] as const).map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        disabled={!webhookEnabled}
+                        onClick={() => setWebhookThreshold(opt)}
+                        className={[
+                          "border px-3 py-1.5 font-mono text-xs transition disabled:opacity-40",
+                          webhookThreshold === opt
+                            ? "border-accent/50 bg-accent/10 text-accent"
+                            : "border-border/50 bg-panel-2 text-muted/60 hover:border-accent/30",
+                        ].join(" ")}
+                      >
+                        {opt === "high" ? "HIGH only" : "HIGH + MEDIUM"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {settings.webhookConfig?.lastDeliveryAt && (
+                  <div className="border border-border/40 bg-panel-2 px-3 py-2 font-mono text-[0.65rem] text-muted/60">
+                    <span className="text-accent/40 mr-1">$</span>
+                    Last delivery:{" "}
+                    <span className={settings.webhookConfig.lastDeliveryStatus === "success" ? "text-accent" : "text-danger"}>
+                      {settings.webhookConfig.lastDeliveryStatus}
+                    </span>
+                    {" · "}{new Date(settings.webhookConfig.lastDeliveryAt).toLocaleString()}
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+
+          {/* ── Auth overrides ── */}
+          <div className="space-y-3">
+            <section className="border border-border/60 bg-panel">
+              <div className="border-b border-border/40 px-4 py-2.5">
+                <p className="font-mono text-[0.62rem] uppercase tracking-[0.26em] text-muted/70">
+                  <span className="text-accent/40 mr-1">▸</span>SELF_AUTH_OVERRIDES
+                </p>
+              </div>
+              <div className="px-4 py-4 space-y-3">
+                <p className="font-mono text-xs text-muted/70 leading-relaxed max-w-sm">
+                  Services listed here are treated as having built-in auth — no <span className="text-warning">NO AUTH LAYER</span> finding will be raised. One entry per line. Match by service name, image name, or domain.
+                </p>
+                <textarea
+                  value={authOverrides}
+                  onChange={(e) => setAuthOverrides(e.target.value)}
+                  rows={5}
+                  placeholder={"my-custom-app\nmy-internal-tool\nservice.example.com"}
+                  className="w-full border border-border/50 bg-panel-2 px-3 py-2 font-mono text-xs text-foreground/80 placeholder:text-muted/30 focus:outline-none focus:border-accent/40 resize-none"
+                />
+                <p className="font-mono text-[0.6rem] text-muted/40">
+                  <span className="text-accent/40 mr-1">$</span>
+                  Popular apps with built-in login (Jellyfin, Vaultwarden, Immich, etc.) are detected automatically.
+                </p>
               </div>
             </section>
           </div>

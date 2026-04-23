@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { compactFindingTypeLabel } from "@/lib/finding-copy";
-import type { FindingSeverity } from "@/lib/ops-ledger-types";
+import type { FindingSeverity, SnapshotChange } from "@/lib/ops-ledger-types";
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -27,6 +27,7 @@ export interface OverviewStatusBoardProps {
   unmatchedTargetCount: number;
   managementSurfaceCount: number;
   urgentItems: OverviewUrgentItem[];
+  recentChanges: SnapshotChange[];
 }
 
 export function OverviewStatusBoard({
@@ -37,6 +38,7 @@ export function OverviewStatusBoard({
   unmatchedTargetCount,
   managementSurfaceCount,
   urgentItems,
+  recentChanges,
 }: OverviewStatusBoardProps) {
   const statTiles = [
     {
@@ -159,6 +161,43 @@ export function OverviewStatusBoard({
           </div>
         )}
       </div>
+
+      {/* ── Recent changes ── */}
+      {recentChanges.length > 0 && (
+        <div className="border border-border/40 bg-panel">
+          <div className="flex items-center justify-between border-b border-border/40 bg-panel-2/60 px-4 py-2 sm:px-5">
+            <span className="font-mono text-[0.65rem] uppercase tracking-[0.25em] text-muted/70">
+              ▸ RECENT_CHANGES
+            </span>
+            <span className="font-mono text-[0.6rem] text-muted/40">
+              since last scan
+            </span>
+          </div>
+          <div className="divide-y divide-border/30">
+            {recentChanges.slice(0, 8).map((ch) => (
+              <Link
+                key={ch.id}
+                href={`/routes/${ch.routeSlug}`}
+                className="flex items-start gap-3 px-4 py-2.5 transition hover:bg-panel-2 sm:px-5"
+              >
+                <span className={cn(
+                  "mt-0.5 shrink-0 font-mono text-[0.6rem] uppercase tracking-wider px-1.5 py-0.5 border",
+                  ch.severity === "high"
+                    ? "border-danger/40 text-danger bg-danger/10"
+                    : ch.severity === "medium"
+                      ? "border-warning/40 text-warning bg-warning/10"
+                      : "border-accent/30 text-accent/70 bg-accent/5",
+                )}>
+                  {ch.severity === "high" ? "HIGH" : ch.severity === "medium" ? "MED" : "LOW"}
+                </span>
+                <span className="font-mono text-xs text-foreground/80 leading-relaxed">
+                  {ch.description}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

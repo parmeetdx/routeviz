@@ -3,6 +3,7 @@ import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +16,7 @@ import {
   getHistoryPoints,
   slugify,
 } from "@/lib/ops-ledger.mjs";
+import { diffSnapshots } from "@/lib/snapshot-differ";
 import type {
   ConfidenceLevel,
   Connector,
@@ -47,6 +49,8 @@ select
   p.caching_enabled,
   p.allow_websocket_upgrade,
   p.block_exploits,
+  p.access_list_id,
+  p.advanced_config,
   p.enabled,
   p.created_on,
   p.modified_on,
@@ -75,6 +79,8 @@ type SettingsUpdate = {
   npmSqlitePath?: string;
   dnsBaseline?: Partial<PersistedSettings["dnsBaseline"]>;
   scanConfig?: Partial<PersistedSettings["scanConfig"]>;
+  webhookConfig?: Partial<PersistedSettings["webhookConfig"]>;
+  authOverrides?: string[];
 };
 
 type DockerPort = {
@@ -150,6 +156,8 @@ type NpmRow = {
   caching_enabled: number;
   allow_websocket_upgrade: number;
   block_exploits: number;
+  access_list_id: number;
+  advanced_config: string | null;
   enabled: number;
   created_on: string;
   modified_on: string;
@@ -186,6 +194,14 @@ const defaultSettings: PersistedSettings = {
     intervalMinutes: DEFAULT_INTERVAL_MINUTES,
     retentionLimit: DEFAULT_RETENTION_LIMIT,
   },
+  webhookConfig: {
+    enabled: false,
+    url: "",
+    severityThreshold: "high",
+    lastDeliveryAt: null,
+    lastDeliveryStatus: null,
+  },
+  authOverrides: [],
 };
 
 const globalOpsLedger = globalThis as typeof globalThis & {
@@ -246,6 +262,14 @@ function normalizeSettings(input: Partial<PersistedSettings> = {}): PersistedSet
           ? retentionLimit
           : defaultSettings.scanConfig.retentionLimit,
     },
+    webhookConfig: {
+      enabled: input.webhookConfig?.enabled ?? false,
+      url: input.webhookConfig?.url ?? "",
+      severityThreshold: input.webhookConfig?.severityThreshold === "high_medium" ? "high_medium" : "high",
+      lastDeliveryAt: input.webhookConfig?.lastDeliveryAt ?? null,
+      lastDeliveryStatus: input.webhookConfig?.lastDeliveryStatus ?? null,
+    },
+    authOverrides: Array.isArray(input.authOverrides) ? input.authOverrides.map(String) : [],
   };
 }
 
@@ -326,8 +350,11 @@ function normalizeSnapshot(snapshot: Partial<OpsLedgerSnapshot>): OpsLedgerSnaps
     ...(snapshot as OpsLedgerSnapshot),
     connectors: Array.isArray(snapshot.connectors) ? snapshot.connectors : [],
     workloads: Array.isArray(snapshot.workloads) ? snapshot.workloads : [],
-    routes: Array.isArray(snapshot.routes) ? snapshot.routes : [],
+    routes: Array.isArray(snapshot.routes)
+      ? snapshot.routes.map((r) => ({ ...r, selfAuthDetected: r.selfAuthDetected ?? false }))
+      : [],
     findings: Array.isArray(snapshot.findings) ? snapshot.findings : [],
+    changes: Array.isArray(snapshot.changes) ? snapshot.changes : [],
   };
 }
 
@@ -928,12 +955,13 @@ function getTlsDaysRemaining(expiresOn: string | null) {
   return Math.ceil((expiresAt - Date.now()) / 86_400_000);
 }
 
-function createRouteRecord(
+async function createRouteRecord(
   route: CanonicalRoute,
   match: MatchResult,
   answers: string[],
   dnsStatus: string,
   hostAddress: string,
+  authOverrides: string[],
 ) {
   const primaryDomain = getPrimaryDomain(route);
   const tlsDaysRemaining = getTlsDaysRemaining(route.row.certificate_expires_on);
@@ -942,6 +970,34 @@ function createRouteRecord(
     : match.matchState === "off_host"
       ? `${route.row.forward_host}:${route.row.forward_port}`
       : "No confident workload";
+
+  // Build a partial record so we can pass it to the seed/override checks before the probe
+  const partialRecord = {
+    slug: slugify(primaryDomain ?? `route-${route.row.id}`),
+    entrypoint: primaryDomain ?? `proxy-host-${route.row.id}`,
+    primaryDomain,
+    workloadLabel,
+    containerName: match.workload?.name ?? null,
+    serviceName: match.workload?.serviceName ?? null,
+    relatedWorkloads: match.relatedWorkloads,
+    npmAccessListId: route.row.access_list_id ?? 0,
+    npmAdvancedConfig: route.row.advanced_config ?? null,
+  };
+
+  // Check seed list and user overrides first (no network call needed)
+  const seedMatch = matchesSelfAuthSeedList(partialRecord as RouteRecord);
+  const overrideMatch = matchesUserOverrides(partialRecord as RouteRecord, authOverrides);
+
+  // HTTP probe only if neither seed nor override matched (avoid unnecessary probes)
+  let httpAuthDetected = false;
+  if (!seedMatch && !overrideMatch) {
+    const targetHost = route.row.forward_host;
+    const targetPort = Number(route.row.forward_port);
+    const probeHost = targetHost === "0.0.0.0" ? "127.0.0.1" : targetHost;
+    httpAuthDetected = await probeHttpAuth(probeHost, targetPort);
+  }
+
+  const selfAuthDetected = seedMatch || overrideMatch || httpAuthDetected;
 
   return {
     slug: slugify(primaryDomain ?? `route-${route.row.id}`),
@@ -967,6 +1023,9 @@ function createRouteRecord(
     sourceRecordId: route.row.id,
     duplicateDomainCount: route.duplicateDomainCount,
     sharedTargetCount: 1,
+    npmAccessListId: route.row.access_list_id ?? 0,
+    npmAdvancedConfig: route.row.advanced_config ?? null,
+    selfAuthDetected,
     chain: [
       primaryDomain ?? `proxy-host-${route.row.id}`,
       "Nginx Proxy Manager",
@@ -1011,25 +1070,216 @@ function pushFinding(
   });
 }
 
+// Images/keywords that indicate an operational console rather than a user-facing app.
+// Used to escalate no-auth findings and flag publicly-reachable admin surfaces.
+const MANAGEMENT_SURFACE_IMAGES = new Set([
+  // Container / host management
+  "portainer", "portainer-ce", "portainer-be",
+  "cockpit", "webmin",
+  // Reverse proxy / network management UIs
+  "nginx-proxy-manager", "proxy-manager", "traefik", "caddy",
+  "haproxy-dataplaneapi",
+  // Auth / SSO consoles
+  "authelia", "authentik", "keycloak", "dex",
+  // Storage / file management
+  "filebrowser",
+  // Document management
+  "paperless-ngx", "paperless",
+  // AI / automation consoles
+  "open-webui", "ollama-webui", "n8n", "nocodb",
+  "appsmith", "tooljet", "budibase-apps",
+  // Database GUIs
+  "phpmyadmin", "pgadmin4", "adminer", "mongo-express",
+  "redis-commander", "redisinsight",
+  // CI/CD
+  "jenkins", "drone", "woodpecker-server",
+  // Monitoring / observability
+  "grafana", "prometheus", "alertmanager",
+  "netdata", "uptime-kuma",
+]);
+
 function isManagementSurface(route: RouteRecord) {
-  const haystack = [
-    route.entrypoint,
-    route.target,
+  const candidates = [
     route.workloadLabel,
     route.containerName ?? "",
     route.serviceName ?? "",
-  ]
+    ...route.relatedWorkloads.map((w) => stripImageToBaseName(w.image)),
+    ...route.relatedWorkloads.map((w) => w.name.toLowerCase()),
+    ...route.relatedWorkloads.flatMap((w) => (w.serviceName ? [w.serviceName.toLowerCase()] : [])),
+  ];
+  return candidates.some((c) => MANAGEMENT_SURFACE_IMAGES.has(c.toLowerCase()))
+    || [...MANAGEMENT_SURFACE_IMAGES].some((token) => route.entrypoint.toLowerCase().includes(token));
+}
+
+const AUTH_TOKENS = ["authelia", "authentik", "oauth2-proxy", "forward-auth", "keycloak"];
+
+// Apps known to ship with their own built-in login screen.
+// Matched against the base image name (registry + tag stripped).
+const SELF_AUTH_IMAGES = new Set([
+  // Media
+  "jellyfin", "emby", "plex", "navidrome", "audiobookshelf", "kavita",
+  "komga", "calibre-web", "stash",
+  // Photos
+  "immich-server", "photoprism", "lychee", "pigallery2",
+  // Documents / notes
+  "paperless-ngx", "paperless", "joplin", "outline", "bookstack",
+  // Storage / files
+  "nextcloud", "seafile", "filebrowser", "owncloud",
+  // Dev / infra
+  "gitea", "forgejo", "gogs", "gitlab-ce", "gitlab-ee",
+  "drone", "woodpecker-server", "jenkins", "harbor-core",
+  "registry",
+  // NAS / bare-metal management UIs
+  "dsm", "synology-dsm",
+  // Monitoring / dashboards
+  "grafana", "uptime-kuma", "netdata", "prometheus",
+  "portainer", "portainer-ce", "portainer-be",
+  "cockpit",
+  // Password managers
+  "vaultwarden", "bitwarden", "bitwarden_rs",
+  // Home automation
+  "home-assistant", "homeassistant",
+  // AI / productivity
+  "open-webui", "ollama-webui", "n8n", "nocodb",
+  "appsmith", "tooljet", "budibase-apps",
+  // Misc popular self-hosted
+  "freshrss", "miniflux", "wallabag", "linkding", "shiori",
+  "reactive-resume", "hoppscotch-app",
+  "mealie", "tandoor",
+  "ntfy",
+]);
+
+function stripImageToBaseName(image: string): string {
+  // lscr.io/linuxserver/jellyfin:latest → jellyfin
+  const withoutTag = image.split(":")[0];
+  const parts = withoutTag.split("/");
+  return parts[parts.length - 1].toLowerCase();
+}
+
+function matchesSelfAuthSeedList(route: RouteRecord): boolean {
+  // Exact match against workload image base names and service names (containerised services)
+  const workloadCandidates = route.relatedWorkloads
+    .flatMap((w) => [stripImageToBaseName(w.image), w.name.toLowerCase(), w.serviceName?.toLowerCase() ?? ""]);
+  if (workloadCandidates.some((c) => SELF_AUTH_IMAGES.has(c))) return true;
+
+  // For bare-metal / network services (no Docker workload), check route identifiers
+  // against seed list tokens using substring match — e.g. "emby" in "emby.host.me"
+  const routeHaystack = [
+    route.entrypoint,
+    route.primaryDomain ?? "",
+    route.workloadLabel,
+    route.containerName ?? "",
+    route.serviceName ?? "",
+  ].join(" ").toLowerCase();
+
+  return [...SELF_AUTH_IMAGES].some((token) => routeHaystack.includes(token));
+}
+
+function matchesUserOverrides(route: RouteRecord, overrides: string[]): boolean {
+  if (overrides.length === 0) return false;
+  const normalized = overrides.map((o) => o.trim().toLowerCase()).filter(Boolean);
+  const candidates = [
+    route.entrypoint.toLowerCase(),
+    route.primaryDomain?.toLowerCase() ?? "",
+    route.workloadLabel.toLowerCase(),
+    route.containerName?.toLowerCase() ?? "",
+    route.serviceName?.toLowerCase() ?? "",
+    ...route.relatedWorkloads.map((w) => stripImageToBaseName(w.image)),
+    ...route.relatedWorkloads.map((w) => w.name.toLowerCase()),
+  ];
+  return candidates.some((c) => normalized.some((o) => c.includes(o) || o.includes(c)));
+}
+
+function probeHttpAuth(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probeHost = host === "0.0.0.0" ? "127.0.0.1" : host;
+    let settled = false;
+    const done = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    const attempt = (mod: typeof http | typeof https) => {
+      try {
+        const req = mod.request(
+          { hostname: probeHost, port, path: "/", method: "GET", headers: { "User-Agent": "ops-ledger-probe/1.0" }, rejectUnauthorized: false },
+          (res) => {
+            const status = res.statusCode ?? 0;
+            if (status === 401) return done(true);
+            const loc = (res.headers.location ?? "").toLowerCase();
+            if ((status === 301 || status === 302) && (loc.includes("login") || loc.includes("auth") || loc.includes("signin") || loc.includes("sso"))) {
+              return done(true);
+            }
+            let body = "";
+            res.on("data", (chunk: Buffer) => {
+              body += chunk.toString();
+              if (body.length > 8192) res.destroy();
+            });
+            res.on("end", () => {
+              const lower = body.toLowerCase();
+              const hasPasswordInput = lower.includes('type="password"') || lower.includes("type='password'");
+              const hasLoginForm = lower.includes("<form") && (lower.includes("login") || lower.includes("sign in") || lower.includes("password"));
+              const hasAuthMeta = lower.includes('content="0;url=/login') || lower.includes('content="0;url=/auth') || lower.includes('href="/login') || lower.includes('href="/auth') || lower.includes('href="/signin');
+              done(hasPasswordInput || hasLoginForm || hasAuthMeta);
+            });
+            res.on("close", () => done(false));
+          },
+        );
+        req.setTimeout(timeoutMs, () => { req.destroy(); done(false); });
+        req.on("error", () => done(false));
+        req.end();
+      } catch {
+        done(false);
+      }
+    };
+
+    // Try HTTP first; if it errors out immediately, fall back to HTTPS
+    try {
+      const req = http.request(
+        { hostname: probeHost, port, path: "/", method: "GET", headers: { "User-Agent": "ops-ledger-probe/1.0" } },
+        (res) => {
+          const status = res.statusCode ?? 0;
+          if (status === 401) return done(true);
+          const loc = (res.headers.location ?? "").toLowerCase();
+          if ((status === 301 || status === 302) && (loc.includes("login") || loc.includes("auth") || loc.includes("signin") || loc.includes("sso"))) {
+            return done(true);
+          }
+          let body = "";
+          res.on("data", (chunk: Buffer) => {
+            body += chunk.toString();
+            if (body.length > 8192) res.destroy();
+          });
+          res.on("end", () => {
+            const lower = body.toLowerCase();
+            const hasPasswordInput = lower.includes('type="password"') || lower.includes("type='password'");
+            const hasLoginForm = lower.includes("<form") && (lower.includes("login") || lower.includes("sign in") || lower.includes("password"));
+            const hasAuthMeta = lower.includes('content="0;url=/login') || lower.includes('content="0;url=/auth') || lower.includes('href="/login') || lower.includes('href="/auth') || lower.includes('href="/signin');
+            done(hasPasswordInput || hasLoginForm || hasAuthMeta);
+          });
+          res.on("close", () => done(false));
+        },
+      );
+      req.setTimeout(timeoutMs, () => { req.destroy(); });
+      req.on("error", () => attempt(https));
+      req.end();
+    } catch {
+      attempt(https);
+    }
+  });
+}
+
+function hasAuthLayer(route: RouteRecord): boolean {
+  if (route.npmAccessListId != null && route.npmAccessListId !== 0) return true;
+  const advancedConfig = (route.npmAdvancedConfig ?? "").toLowerCase();
+  if (advancedConfig.includes("auth_request") || advancedConfig.includes("authelia") || advancedConfig.includes("authentik")) return true;
+  const haystack = route.relatedWorkloads
+    .flatMap((w) => [w.name, w.image])
     .join(" ")
     .toLowerCase();
-
-  return [
-    "portainer",
-    "proxy-manager",
-    "authelia",
-    "filebrowser",
-    "paperless",
-    "open-webui",
-  ].some((token) => haystack.includes(token));
+  if (AUTH_TOKENS.some((token) => haystack.includes(token))) return true;
+  // Built-in auth detected via HTTP probe or seed list
+  return route.selfAuthDetected;
 }
 
 function createFindings(routes: RouteRecord[]) {
@@ -1169,15 +1419,20 @@ function createFindings(routes: RouteRecord[]) {
       );
     }
 
-    if (isManagementSurface(route)) {
+    if (!hasAuthLayer(route)) {
+      const mgmt = isManagementSurface(route);
       pushFinding(
         findings,
         route,
-        "management_surface",
-        "medium",
-        `${route.entrypoint} exposes a management surface`,
-        `${route.workloadLabel} looks like an operational console rather than a user-facing app.`,
-        "Confirm you still want this surface publicly reachable and protected the way you expect.",
+        mgmt ? "management_surface" : "no_auth_layer",
+        mgmt ? "high" : "medium",
+        mgmt
+          ? `${route.entrypoint} is a public management surface with no auth`
+          : `${route.entrypoint} has no auth layer detected`,
+        mgmt
+          ? `${route.workloadLabel} looks like an operational console with no NPM access list or forward-auth found.`
+          : "No NPM access list configured and no Authelia/Authentik/oauth2-proxy found in the compose stack.",
+        "Add Authelia, Authentik, or an NPM access list, or confirm public access is intentional.",
       );
     }
   }
@@ -1246,7 +1501,7 @@ async function buildSnapshot(settings: PersistedSettings) {
             baselineAnswers,
           );
 
-          return createRouteRecord(route, match, answers, dnsStatus, hostAddress);
+          return createRouteRecord(route, match, answers, dnsStatus, hostAddress, settings.authOverrides);
         }),
       );
 
@@ -1339,21 +1594,114 @@ async function buildSnapshot(settings: PersistedSettings) {
     workloads: workloads.map((workload) => serializeWorkload(workload)),
     routes,
     findings,
+    changes: [],
   } satisfies OpsLedgerSnapshot;
+}
+
+function fireWebhook(url: string, payload: object): Promise<{ success: boolean }> {
+  const body = JSON.stringify(payload);
+  return new Promise((resolve) => {
+    try {
+      https_request(
+        url,
+        body,
+        () => resolve({ success: true }),
+        () => resolve({ success: false }),
+      );
+    } catch {
+      resolve({ success: false });
+    }
+  });
+}
+
+function https_request(
+  url: string,
+  body: string,
+  resolve: () => void,
+  reject: (err: unknown) => void,
+) {
+  const parsed = new URL(url);
+  const mod = parsed.protocol === "https:" ? https : http;
+  const req = mod.request(
+    {
+      hostname: parsed.hostname,
+      port: parsed.port || (parsed.protocol === "https:" ? 443 : 80),
+      path: parsed.pathname + parsed.search,
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) },
+    },
+    (res: { resume: () => void }) => { res.resume(); resolve(); },
+  );
+  req.setTimeout(5000, () => { req.destroy(); reject(new Error("timeout")); });
+  req.on("error", reject);
+  req.write(body);
+  req.end();
+  return req;
 }
 
 async function runScanAndPersist(store: StoreFile) {
   const snapshot = await buildSnapshot(store.settings);
+  const previous = getActiveSnapshot(store);
+  const changes = previous ? diffSnapshots(previous, snapshot) : [];
+  const snapshotWithChanges = { ...snapshot, changes };
   const retentionLimit = store.settings.scanConfig.retentionLimit;
-  const snapshots = [...store.snapshots, snapshot].slice(-retentionLimit);
+  const snapshots = [...store.snapshots, snapshotWithChanges].slice(-retentionLimit);
+
+  // Fire webhook for new findings (fire-and-forget, updates delivery status)
+  const wh = store.settings.webhookConfig;
+  let updatedWebhookConfig = wh;
+  if (wh.enabled && wh.url) {
+    const prevFindingIds = new Set((previous?.findings ?? []).map((f) => f.id));
+    const threshold = wh.severityThreshold === "high_medium"
+      ? ["high", "medium"]
+      : ["high"];
+    const newFindings = snapshotWithChanges.findings.filter(
+      (f) => !prevFindingIds.has(f.id) && threshold.includes(f.severity),
+    );
+    if (newFindings.length > 0) {
+      const result = await fireWebhook(wh.url, {
+        timestamp: snapshotWithChanges.generatedAt,
+        hostLabel: snapshotWithChanges.hostLabel,
+        hostAddress: snapshotWithChanges.hostAddress,
+        newFindingCount: newFindings.length,
+        findings: newFindings.map((f) => ({
+          id: f.id,
+          routeSlug: f.routeSlug,
+          type: f.type,
+          severity: f.severity,
+          title: f.title,
+          evidence: f.evidence,
+        })),
+      });
+      updatedWebhookConfig = {
+        ...wh,
+        lastDeliveryAt: snapshotWithChanges.generatedAt,
+        lastDeliveryStatus: result.success ? "success" : "failed",
+      };
+    }
+  }
+
   const nextStore: StoreFile = {
     ...store,
-    activeSnapshotId: snapshot.id,
+    activeSnapshotId: snapshotWithChanges.id,
     snapshots,
+    settings: { ...store.settings, webhookConfig: updatedWebhookConfig },
   };
 
   await writeStore(nextStore);
   return nextStore;
+}
+
+function getRecentChanges(snapshots: OpsLedgerSnapshot[]) {
+  // Collect changes from last 5 snapshots, dedupe by id, keep most severe
+  const seen = new Map<string, (typeof snapshots)[0]["changes"][0]>();
+  for (const snap of snapshots.slice(-5)) {
+    for (const change of snap.changes ?? []) {
+      if (!seen.has(change.id)) seen.set(change.id, change);
+    }
+  }
+  const order: Record<string, number> = { high: 0, medium: 1, low: 2 };
+  return [...seen.values()].sort((a, b) => order[a.severity] - order[b.severity]);
 }
 
 export async function getOpsLedgerState(): Promise<OpsLedgerState> {
@@ -1367,6 +1715,7 @@ export async function getOpsLedgerState(): Promise<OpsLedgerState> {
       snapshot: getFallbackSnapshot(store.settings),
       history: [],
       settings: store.settings,
+      recentChanges: [],
     };
   }
 
@@ -1374,6 +1723,7 @@ export async function getOpsLedgerState(): Promise<OpsLedgerState> {
     snapshot,
     history: getHistoryPoints(store.snapshots),
     settings: store.settings,
+    recentChanges: getRecentChanges(store.snapshots),
   };
 }
 
@@ -1389,6 +1739,7 @@ export async function triggerManualScan() {
     snapshot,
     history: getHistoryPoints(store.snapshots),
     settings: store.settings,
+    recentChanges: getRecentChanges(store.snapshots),
   } satisfies OpsLedgerState;
 }
 
@@ -1410,6 +1761,11 @@ export async function saveSettings(
         ...store.settings.scanConfig,
         ...input.scanConfig,
       },
+      webhookConfig: {
+        ...store.settings.webhookConfig,
+        ...input.webhookConfig,
+      },
+      authOverrides: input.authOverrides ?? store.settings.authOverrides,
     }),
   };
 
@@ -1420,5 +1776,6 @@ export async function saveSettings(
     snapshot: snapshot ?? getFallbackSnapshot(nextStore.settings),
     history: getHistoryPoints(nextStore.snapshots),
     settings: nextStore.settings,
+    recentChanges: getRecentChanges(nextStore.snapshots),
   };
 }

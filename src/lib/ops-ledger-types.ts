@@ -79,6 +79,9 @@ export interface RouteRecord {
   sourceRecordId: number | null;
   duplicateDomainCount: number;
   sharedTargetCount: number;
+  npmAccessListId: number;
+  npmAdvancedConfig: string | null;
+  selfAuthDetected: boolean;
   chain: string[];
   relatedWorkloads: RelatedWorkload[];
 }
@@ -98,6 +101,25 @@ export interface ScanConfig {
   nextScheduledAt: string | null;
 }
 
+export type ChangeKind =
+  | "route_added"
+  | "route_removed"
+  | "match_recovered"
+  | "match_lost"
+  | "finding_appeared"
+  | "finding_resolved"
+  | "cert_expiry_warning"
+  | "container_down";
+
+export interface SnapshotChange {
+  id: string;
+  kind: ChangeKind;
+  severity: FindingSeverity;
+  routeSlug: string;
+  routeLabel: string;
+  description: string;
+}
+
 export interface OpsLedgerSnapshot {
   id: string;
   generatedAt: string;
@@ -110,6 +132,7 @@ export interface OpsLedgerSnapshot {
   workloads: WorkloadRecord[];
   routes: RouteRecord[];
   findings: Finding[];
+  changes: SnapshotChange[];
 }
 
 export interface OverviewStats {
@@ -145,6 +168,14 @@ export interface SnapshotHistoryPoint {
   highSeverityCount: number;
 }
 
+export interface WebhookConfig {
+  enabled: boolean;
+  url: string;
+  severityThreshold: "high" | "high_medium";
+  lastDeliveryAt: string | null;
+  lastDeliveryStatus: "success" | "failed" | null;
+}
+
 export interface PersistedSettings {
   dockerSocketPath: string;
   hostAddress: string | null;
@@ -159,10 +190,13 @@ export interface PersistedSettings {
     intervalMinutes: number;
     retentionLimit: number;
   };
+  webhookConfig: WebhookConfig;
+  authOverrides: string[];
 }
 
 export interface OpsLedgerState {
   snapshot: OpsLedgerSnapshot;
   history: SnapshotHistoryPoint[];
   settings: PersistedSettings;
+  recentChanges: SnapshotChange[];
 }

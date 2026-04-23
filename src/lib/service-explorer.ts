@@ -1,7 +1,6 @@
 import { slugify } from "@/lib/ops-ledger.mjs";
 import type {
   Finding,
-  FindingSeverity,
   OpsLedgerSnapshot,
   RelatedWorkload,
   RouteRecord,
@@ -202,8 +201,14 @@ function buildPublicService(
       state: "warn",
     },
     {
-      label: "No auth layer detected",
-      state: "warn",
+      label: findings.some((f) => f.type === "no_auth_layer")
+        ? "No auth layer detected"
+        : route.npmAccessListId !== 0
+          ? "Auth layer: NPM access list"
+          : (route.npmAdvancedConfig ?? "").toLowerCase().includes("auth_request")
+            ? "Auth layer: forward-auth (advanced config)"
+            : "Auth layer detected",
+      state: findings.some((f) => f.type === "no_auth_layer") ? "warn" : "ok",
     },
   ];
   const warningCount = riskChecks.filter((check) => check.state !== "ok").length;
