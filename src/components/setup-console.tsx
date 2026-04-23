@@ -216,7 +216,7 @@ export default function SetupConsole({
         throw new Error("Saving setup failed.");
       }
 
-      await fetch("/api/scan", { method: "POST" });
+      fetch("/api/scan", { method: "POST" }).catch(() => null);
 
       setStatus("saved");
       router.refresh();
