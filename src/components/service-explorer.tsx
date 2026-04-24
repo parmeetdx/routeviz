@@ -275,7 +275,7 @@ function ServiceSectionBlock({
       <div className="mb-2 flex items-center justify-between gap-3 px-1">
         <div>
           <div className="font-mono text-[0.6rem] uppercase tracking-[0.22em] text-muted/60">
-            <span className="text-accent/40 mr-1">//</span>
+            <span className="text-accent/40 mr-1">{"//"}</span>
             {section.label}
           </div>
         </div>

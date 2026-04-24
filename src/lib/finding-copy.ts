@@ -26,6 +26,8 @@ export function compactFindingTypeLabel(type: string) {
       return "stale image";
     case "no_backup":
       return "no backup";
+    case "intent_drift":
+      return "intent drift";
     default:
       return humanizeFindingType(type);
   }
@@ -55,6 +57,8 @@ export function compactFindingHeadline(type: string) {
       return "Image not refreshed recently";
     case "no_backup":
       return "No backup tool in stack";
+    case "intent_drift":
+      return "Exposure intent drift";
     default:
       return humanizeFindingType(type);
   }
@@ -84,6 +88,8 @@ export function compactFindingNextCheck(type: string) {
       return "Pull latest and recreate";
     case "no_backup":
       return "Add a backup tool to the stack";
+    case "intent_drift":
+      return "Review saved intent";
     default:
       return "Inspect path";
   }

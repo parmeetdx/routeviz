@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 
 import { formatTimestampLabel, getDnsBaselineHelper } from "@/lib/routeviz.mjs";
-import type { Connector, PersistedSettings, RoutevizSnapshot } from "@/lib/routeviz-types";
+import type { Connector, ExposureIntent, PersistedSettings, RoutevizSnapshot } from "@/lib/routeviz-types";
 
 import { scanDocker } from "@/lib/collectors/docker";
 import { dedupeRoutes, fetchNpmApiRoutes, readNpmSqlite } from "@/lib/collectors/npm";
@@ -11,7 +11,10 @@ import { createFindings, matchesSelfAuthSeedList, matchesUserOverrides } from "@
 import { createWorkloadFindings } from "@/lib/analysis/workload-findings";
 import { detectHostAddress, getNextScheduledAt } from "@/lib/settings";
 
-export async function buildSnapshot(settings: PersistedSettings): Promise<RoutevizSnapshot> {
+export async function buildSnapshot(
+  settings: PersistedSettings,
+  exposureIntents: ExposureIntent[] = [],
+): Promise<RoutevizSnapshot> {
   const hostAddress = settings.hostAddress ?? detectHostAddress() ?? "unknown-host";
   const hostCandidates = new Set<string>(
     [hostAddress, settings.hostAddress, detectHostAddress(), "localhost", "127.0.0.1"]
@@ -133,9 +136,10 @@ export async function buildSnapshot(settings: PersistedSettings): Promise<Routev
 
   // ── Findings ──────────────────────────────────────────────────────────────────
   const suppressed = new Set(settings.suppressedFindings ?? []);
+  const intentMap = new Map(exposureIntents.map((intent) => [intent.routeSlug, intent]));
   const severityOrder = { high: 0, medium: 1, low: 2 };
 
-  const findings = createFindings(routes, suppressed).sort(
+  const findings = createFindings(routes, suppressed, intentMap, settings.scanConfig.driftIntervalDays).sort(
     (a, b) => severityOrder[a.severity] - severityOrder[b.severity],
   );
   const workloadFindings = createWorkloadFindings(workloads, routes, suppressed).sort(
@@ -160,6 +164,7 @@ export async function buildSnapshot(settings: PersistedSettings): Promise<Routev
       intervalEnabled: settings.scanConfig.intervalEnabled,
       intervalMinutes: settings.scanConfig.intervalMinutes,
       retentionLimit: settings.scanConfig.retentionLimit,
+      driftIntervalDays: settings.scanConfig.driftIntervalDays,
       lastCompletedAt: generatedAt,
       nextScheduledAt: getNextScheduledAt(generatedAt, settings.scanConfig.intervalEnabled, settings.scanConfig.intervalMinutes),
     },

@@ -40,6 +40,7 @@ export function createFallbackSnapshot(settings, message = "Waiting for the firs
       intervalEnabled: settings.scanConfig.intervalEnabled,
       intervalMinutes: settings.scanConfig.intervalMinutes,
       retentionLimit: settings.scanConfig.retentionLimit,
+      driftIntervalDays: settings.scanConfig.driftIntervalDays ?? 7,
       lastCompletedAt: null,
       nextScheduledAt: null,
     },

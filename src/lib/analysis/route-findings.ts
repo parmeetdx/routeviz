@@ -1,7 +1,4 @@
-import http from "node:http";
-import https from "node:https";
-
-import type { Finding, FindingSeverity, RouteRecord } from "@/lib/routeviz-types";
+import type { ExposureIntent, Finding, FindingSeverity, RouteRecord } from "@/lib/routeviz-types";
 
 export function suppressionKey(type: string, name: string): string {
   return `${type}:${name}`;
@@ -109,10 +106,106 @@ function pushFinding(
   findings.push({ id: `${route.slug}-${type}`, routeSlug: route.slug, type, severity, title, evidence, nextCheck });
 }
 
-export function createFindings(routes: RouteRecord[], suppressed: Set<string>): Finding[] {
+function isTemporaryIntentExpired(intent: ExposureIntent): boolean {
+  if (intent.mode !== "temporary_public" || !intent.expiresAt) return false;
+  const expiresAt = new Date(intent.expiresAt).getTime();
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
+}
+
+function pushIntentFindings(
+  findings: Finding[],
+  route: RouteRecord,
+  intent: ExposureIntent | undefined,
+  suppressed: Set<string>,
+  driftIntervalDays = 7,
+): void {
+  if (!intent) return;
+
+  const intentAgeMs = Date.now() - new Date(intent.updatedAt).getTime();
+  const driftIntervalMs = driftIntervalDays * 24 * 60 * 60 * 1000;
+  const driftDue = intentAgeMs >= driftIntervalMs;
+
+  const drift: Array<{ severity: FindingSeverity; title: string; evidence: string; nextCheck: string }> = [];
+
+  if (intent.expectedTarget && intent.expectedTarget !== route.target) {
+    drift.push({
+      severity: "medium",
+      title: `${route.entrypoint} target changed after approval`,
+      evidence: `Expected ${intent.expectedTarget}, now forwards to ${route.target}.`,
+      nextCheck: "Review the exposure baseline or restore the previous target.",
+    });
+  }
+
+  if (driftDue && intent.mode === "private_only") {
+    drift.push({
+      severity: "high",
+      title: `${route.entrypoint} is public but marked private-only`,
+      evidence: "This route is still exposed through Nginx Proxy Manager after being marked private-only.",
+      nextCheck: "Remove the public route or update the exposure intent.",
+    });
+  }
+
+  if (driftDue && intent.mode === "auth_required" && !hasAuthLayer(route)) {
+    drift.push({
+      severity: "high",
+      title: `${route.entrypoint} is missing required auth`,
+      evidence: "This route was marked as requiring an auth layer, but no NPM access list, forward-auth, or self-auth signal is currently detected.",
+      nextCheck: "Restore the auth layer or update the exposure intent.",
+    });
+  }
+
+  if (isTemporaryIntentExpired(intent)) {
+    drift.push({
+      severity: "medium",
+      title: `${route.entrypoint} temporary exposure expired`,
+      evidence: `Temporary public approval expired on ${new Date(intent.expiresAt as string).toLocaleDateString("en-US")}.`,
+      nextCheck: "Review whether this route should remain public.",
+    });
+  }
+
+  if (drift.length === 0) return;
+
+  const severity: FindingSeverity = drift.some((item) => item.severity === "high") ? "high" : "medium";
+  const primary = drift.find((item) => item.severity === severity) ?? drift[0];
+  const extraCount = drift.length - 1;
+  pushFinding(
+    findings,
+    route,
+    "intent_drift",
+    severity,
+    primary.title,
+    extraCount > 0 ? `${primary.evidence} +${extraCount} more baseline drift check${extraCount === 1 ? "" : "s"}.` : primary.evidence,
+    primary.nextCheck,
+    suppressed,
+  );
+}
+
+function intentHandlesAuthFinding(intent: ExposureIntent | undefined, isMgmt: boolean): boolean {
+  if (!intent) return false;
+  if (intent.mode === "public_ok") return !isMgmt;
+  return intent.mode === "auth_required" || intent.mode === "private_only" || intent.mode === "temporary_public";
+}
+
+function intentHandlesExposureFinding(intent: ExposureIntent | undefined, type: string): boolean {
+  if (!intent) return false;
+  if (type === "docker_socket_write_mount") {
+    return intent.mode === "auth_required" || intent.mode === "private_only";
+  }
+  return false;
+}
+
+export function createFindings(
+  routes: RouteRecord[],
+  suppressed: Set<string>,
+  exposureIntents: Map<string, ExposureIntent> = new Map(),
+  driftIntervalDays = 7,
+): Finding[] {
   const findings: Finding[] = [];
 
   for (const route of routes) {
+    const intent = exposureIntents.get(route.slug);
+    pushIntentFindings(findings, route, intent, suppressed, driftIntervalDays);
+
     if (route.matchState === "ambiguous") {
       pushFinding(findings, route, "ambiguous_target", "high", `${route.entrypoint} has multiple plausible workloads`, route.notes, "Tighten the NPM target or Docker network aliases so the route resolves to a single workload.", suppressed);
     }
@@ -142,17 +235,22 @@ export function createFindings(routes: RouteRecord[], suppressed: Set<string>): 
     if (route.dnsStatus === "mismatch") {
       pushFinding(findings, route, "dns_mismatch", "medium", `${route.entrypoint} does not match the configured DNS baseline`, `Observed answers: ${route.dnsAnswers.join(", ")}.`, "Check the baseline setting or the current public endpoint before trusting this route.", suppressed);
     }
-    if (route.relatedWorkloads.some((w) => w.dockerSocketMount === "read_write")) {
+    if (
+      !intentHandlesExposureFinding(intent, "docker_socket_write_mount") &&
+      route.relatedWorkloads.some((w) => w.dockerSocketMount === "read_write")
+    ) {
       pushFinding(findings, route, "docker_socket_write_mount", "high", `${route.entrypoint} lands on a workload with read-write Docker socket access`, `${route.workloadLabel} has /var/run/docker.sock mounted read-write.`, "Treat this route as a high-sensitivity management surface and keep it behind stronger auth.", suppressed);
     }
     if (!hasAuthLayer(route)) {
       const mgmt = isManagementSurface(route);
-      pushFinding(findings, route, mgmt ? "management_surface" : "no_auth_layer", mgmt ? "high" : "medium",
-        mgmt ? `${route.entrypoint} is a public management surface with no auth` : `${route.entrypoint} has no auth layer detected`,
-        mgmt ? `${route.workloadLabel} looks like an operational console with no NPM access list or forward-auth found.` : "No NPM access list configured and no Authelia/Authentik/oauth2-proxy found in the compose stack.",
-        "Add Authelia, Authentik, or an NPM access list, or confirm public access is intentional.",
-        suppressed,
-      );
+      if (!intentHandlesAuthFinding(intent, mgmt)) {
+        pushFinding(findings, route, mgmt ? "management_surface" : "no_auth_layer", mgmt ? "high" : "medium",
+          mgmt ? `${route.entrypoint} is a public management surface with no auth` : `${route.entrypoint} has no auth layer detected`,
+          mgmt ? `${route.workloadLabel} looks like an operational console with no NPM access list or forward-auth found.` : "No NPM access list configured and no Authelia/Authentik/oauth2-proxy found in the compose stack.",
+          "Add Authelia, Authentik, or an NPM access list, or confirm public access is intentional.",
+          suppressed,
+        );
+      }
     }
   }
 

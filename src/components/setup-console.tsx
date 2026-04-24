@@ -82,6 +82,9 @@ export default function SetupConsole({
   const [intervalMinutes, setIntervalMinutes] = useState(
     String(settings.scanConfig.intervalMinutes),
   );
+  const [driftIntervalDays, setDriftIntervalDays] = useState(
+    String(settings.scanConfig.driftIntervalDays ?? 7),
+  );
   const [authOverrides, setAuthOverrides] = useState(
     (settings.authOverrides ?? []).join("\n"),
   );
@@ -148,6 +151,14 @@ export default function SetupConsole({
     { value: "15", label: "15m", note: "lighter" },
     { value: "30", label: "30m", note: "low noise" },
     { value: "60", label: "60m", note: "minimal" },
+  ];
+
+  const driftIntervalOptions = [
+    { value: "1",  label: "1d",  note: "strict" },
+    { value: "3",  label: "3d",  note: "tight" },
+    { value: "7",  label: "7d",  note: "default" },
+    { value: "14", label: "14d", note: "relaxed" },
+    { value: "30", label: "30d", note: "lenient" },
   ];
 
   const retentionWindow = intervalEnabled
@@ -242,6 +253,7 @@ export default function SetupConsole({
           scanConfig: {
             intervalEnabled,
             intervalMinutes: Number(intervalMinutes),
+            driftIntervalDays: Number(driftIntervalDays),
           },
           webhookConfig: {
             enabled: webhookEnabled,
@@ -605,6 +617,53 @@ export default function SetupConsole({
                 <div className="border border-border/50 bg-panel-2 px-4 py-3 font-mono text-xs leading-6 text-muted/80">
                   <span className="text-accent/40 mr-1">$</span>
                   {scheduleDetail}
+                </div>
+              </div>
+            </section>
+          </div>
+
+          {/* ── Drift interval ── */}
+          <div className="space-y-3">
+            <section className="border border-border/60 bg-panel">
+              <div className="border-b border-border/40 px-4 py-2.5">
+                <p className="font-mono text-[0.62rem] uppercase tracking-[0.26em] text-muted/70">
+                  <span className="text-accent/40 mr-1">▸</span>INTENT_DRIFT_INTERVAL
+                </p>
+              </div>
+              <div className="grid gap-6 p-4 sm:grid-cols-2">
+                <div>
+                  <p className="font-mono text-[0.62rem] uppercase tracking-[0.22em] text-muted/70">
+                    DRIFT_CHECK_CADENCE
+                  </p>
+                  <h3 className="mt-2 font-mono text-sm font-bold text-foreground">
+                    Exposure drift grace period
+                  </h3>
+                  <p className="mt-2 font-mono text-xs leading-6 text-muted/80">
+                    How long after setting an intent before Routeviz starts checking for drift. Default is 7 days — gives you time to act before the finding reappears.
+                  </p>
+                </div>
+                <div className="min-w-0 space-y-3">
+                  <div className="grid gap-1.5 sm:grid-cols-5">
+                    {driftIntervalOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setDriftIntervalDays(option.value)}
+                        className={`border px-3 py-3 text-left transition ${
+                          driftIntervalDays === option.value
+                            ? "border-accent/45 bg-panel-2 shadow-[inset_3px_0_0_0_var(--color-accent)]"
+                            : "border-border/50 bg-panel hover:border-accent/25"
+                        }`}
+                      >
+                        <div className="font-mono text-xs font-bold text-foreground">{option.label}</div>
+                        <div className="mt-1 font-mono text-[0.6rem] text-muted/60">{option.note}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="border border-border/50 bg-panel-2 px-4 py-3 font-mono text-xs leading-6 text-muted/80">
+                    <span className="text-accent/40 mr-1">$</span>
+                    Intent drift findings appear {driftIntervalDays === "1" ? "1 day" : `${driftIntervalDays} days`} after an intent is set if conditions are not met.
+                  </div>
                 </div>
               </div>
             </section>

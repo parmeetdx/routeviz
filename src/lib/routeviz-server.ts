@@ -4,6 +4,7 @@ import https from "node:https";
 import { diffSnapshots } from "@/lib/snapshot-differ";
 import {
   dbGetActiveSnapshot,
+  dbGetExposureIntents,
   dbGetSettings,
   dbGetSnapshots,
   dbGetSuppressedFindings,
@@ -13,10 +14,12 @@ import {
   dbSetActiveSnapshot,
   dbSuppressFinding,
   dbUnsuppressFinding,
+  dbDeleteExposureIntent,
+  dbUpsertExposureIntent,
   dbUpsertSettings,
   runMigrations,
 } from "@/lib/db";
-import type { Finding, PersistedSettings, RoutevizSnapshot, RoutevizState } from "@/lib/routeviz-types";
+import type { ExposureIntentMode, Finding, PersistedSettings, RoutevizSnapshot, RoutevizState } from "@/lib/routeviz-types";
 import { getHistoryPoints } from "@/lib/routeviz.mjs";
 
 import { attachCurrentSettings, getFallbackSnapshot, normalizeSettings } from "@/lib/settings";
@@ -99,9 +102,12 @@ function fireWebhook(url: string, payload: object): Promise<{ success: boolean }
 // ── Scan + persist ────────────────────────────────────────────────────────────
 
 export async function runScanAndPersist(settings: PersistedSettings): Promise<void> {
-  const suppressedKeys = await dbGetSuppressedFindings();
+  const [suppressedKeys, exposureIntents] = await Promise.all([
+    dbGetSuppressedFindings(),
+    dbGetExposureIntents(),
+  ]);
   const settingsWithSuppressed = { ...settings, suppressedFindings: suppressedKeys };
-  const snapshot = await buildSnapshot(settingsWithSuppressed);
+  const snapshot = await buildSnapshot(settingsWithSuppressed, exposureIntents);
   const previous = await dbGetActiveSnapshot();
   const changes = previous ? diffSnapshots(previous, snapshot) : [];
   const snapshotWithChanges = { ...snapshot, changes };
@@ -155,11 +161,12 @@ function getRecentChanges(snapshots: RoutevizSnapshot[]) {
 
 async function loadState(): Promise<RoutevizState> {
   await ensureDb();
-  const [settings, rawSnapshot, allSnapshots, suppressedKeys] = await Promise.all([
+  const [settings, rawSnapshot, allSnapshots, suppressedKeys, exposureIntents] = await Promise.all([
     getSettings(),
     dbGetActiveSnapshot(),
     dbGetSnapshots(576),
     dbGetSuppressedFindings(),
+    dbGetExposureIntents(),
   ]);
 
   const suppressedSet = new Set(suppressedKeys);
@@ -171,6 +178,7 @@ async function loadState(): Promise<RoutevizState> {
       snapshots: [],
       history: [],
       settings: settingsWithSuppressed,
+      exposureIntents,
       recentChanges: [],
     };
   }
@@ -191,6 +199,7 @@ async function loadState(): Promise<RoutevizState> {
     snapshots: allSnapshots,
     history: getHistoryPoints(allSnapshots),
     settings: settingsWithSuppressed,
+    exposureIntents,
     recentChanges: getRecentChanges(allSnapshots),
   };
 }
@@ -236,4 +245,38 @@ export async function unsuppressFinding(key: string): Promise<void> {
 export async function getSuppressedFindings(): Promise<string[]> {
   await ensureDb();
   return dbGetSuppressedFindings();
+}
+
+export function isExposureIntentMode(value: string): value is ExposureIntentMode {
+  return value === "public_ok" || value === "auth_required" || value === "private_only" || value === "temporary_public";
+}
+
+export async function saveExposureIntent(routeSlug: string, mode: ExposureIntentMode): Promise<void> {
+  await ensureDb();
+  const snapshot = await dbGetActiveSnapshot();
+  const route = snapshot?.routes.find((item) => item.slug === routeSlug);
+
+  if (!route) {
+    throw new Error(`Route ${routeSlug} was not found in the active snapshot.`);
+  }
+
+  const expiresAt =
+    mode === "temporary_public"
+      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      : null;
+
+  await dbUpsertExposureIntent({
+    routeSlug: route.slug,
+    routeLabel: route.entrypoint,
+    mode,
+    expectedTarget: route.target,
+    expiresAt,
+  });
+  await dbRequestScan();
+}
+
+export async function deleteExposureIntent(routeSlug: string): Promise<void> {
+  await ensureDb();
+  await dbDeleteExposureIntent(routeSlug);
+  await dbRequestScan();
 }
