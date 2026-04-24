@@ -44,7 +44,7 @@ export function ConsolePage({
             {/* Logo / brand */}
             <Link href="/" className="flex items-center gap-2 select-none">
               <span className="font-mono text-accent text-lg font-bold tracking-widest" style={{ textShadow: "0 0 12px rgba(57,255,122,0.6)" }}>
-                OPS-LEDGER
+                NETCANARY
               </span>
               <span className="blink font-mono text-accent text-lg leading-none">▋</span>
             </Link>

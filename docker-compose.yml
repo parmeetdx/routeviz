@@ -3,24 +3,24 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ops_ledger
-      POSTGRES_USER: ops_ledger
+      POSTGRES_DB: netcanary
+      POSTGRES_USER: netcanary
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ops_ledger"]
+      test: ["CMD-SHELL", "pg_isready -U netcanary"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  ops-ledger:
+  netcanary:
     build: .
     restart: unless-stopped
     ports:
       - "${PORT:-3000}:3000"
     environment:
-      DATABASE_URL: postgresql://ops_ledger:${POSTGRES_PASSWORD:-changeme}@postgres:5432/ops_ledger
+      DATABASE_URL: postgresql://netcanary:${POSTGRES_PASSWORD:-changeme}@postgres:5432/netcanary
       NODE_ENV: production
     volumes:
       # Docker socket for container scanning
@@ -28,11 +28,11 @@ services:
       # NPM SQLite database (adjust path to match your setup)
       - /docker/apps/nginx-proxy-manager/data:/npm-data:ro
       # Preserve store.json for one-time migration on first boot
-      - ops_ledger_data:/app/.ops-ledger
+      - netcanary_data:/app/.netcanary
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
   postgres_data:
-  ops_ledger_data:
+  netcanary_data:

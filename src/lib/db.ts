@@ -15,7 +15,7 @@ export function getPool(): Pool {
     if (!connectionString) {
       throw new Error(
         "DATABASE_URL environment variable is not set. " +
-        "Add it to your .env file: DATABASE_URL=postgresql://user:password@localhost:5432/ops_ledger",
+        "Add it to your .env file: DATABASE_URL=postgresql://user:password@localhost:5432/netcanary",
       );
     }
     globalDb.__opsLedgerPool = new Pool({ connectionString });

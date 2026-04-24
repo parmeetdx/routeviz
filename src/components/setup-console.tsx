@@ -113,7 +113,7 @@ export default function SetupConsole({
       label: "Off",
       description: "No DNS mismatch alerts",
       helper:
-        "Ops Ledger records DNS answers, but it does not compare them against an expected endpoint.",
+        "Netcanary records DNS answers, but it does not compare them against an expected endpoint.",
       example: "Best for most installs when you only want exposure findings.",
       recommended: true,
     },
@@ -172,7 +172,7 @@ export default function SetupConsole({
 
   const baselineText =
     baselineMode === "disabled"
-      ? "DNS mismatch checks are off. Ops Ledger still records answers it sees."
+      ? "DNS mismatch checks are off. Netcanary still records answers it sees."
       : baselineMode === "reference_hostname"
         ? `Comparing public routes against ${baselineValue || "your trusted hostname"}.`
         : `Comparing public routes against ${baselineValue || "your explicit endpoint"}.`;
@@ -355,7 +355,7 @@ export default function SetupConsole({
 
                   {baselineMode === "disabled" ? (
                     <p className="mt-2 font-mono text-xs leading-6 text-foreground/80">
-                      Ops Ledger will keep recording DNS answers, but it will not open
+                      Netcanary will keep recording DNS answers, but it will not open
                       mismatch findings from them.
                     </p>
                   ) : (
