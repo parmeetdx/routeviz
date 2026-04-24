@@ -194,8 +194,8 @@ export default async function FindingsPage({
       description="Select a filter bucket → open the affected service route."
       lastSyncLabel={model.lastSyncLabel}
       compactIntro
-      actions={
-        <>
+      titleSlot={
+        <div className="flex flex-wrap items-center gap-2 mt-2">
           <span className={`font-mono text-xs border px-2.5 py-1 ${severityClasses("high")}`}>
             {severityCounts.high} HIGH
           </span>
@@ -213,7 +213,7 @@ export default async function FindingsPage({
               {suppressedKeys.length} suppressed
             </Link>
           )}
-        </>
+        </div>
       }
     >
       {/* ── Filter bucket bar ── */}

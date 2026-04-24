@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { readFile, rename } from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -17,6 +17,20 @@ import {
   slugify,
 } from "@/lib/ops-ledger.mjs";
 import { diffSnapshots } from "@/lib/snapshot-differ";
+import {
+  dbGetActiveSnapshot,
+  dbGetSettings,
+  dbGetSnapshotCount,
+  dbGetSnapshots,
+  dbGetSuppressedFindings,
+  dbInsertSnapshot,
+  dbPruneSnapshots,
+  dbSetActiveSnapshot,
+  dbSuppressFinding,
+  dbUnsuppressFinding,
+  dbUpsertSettings,
+  runMigrations,
+} from "@/lib/db";
 import type {
   ConfidenceLevel,
   Connector,
@@ -65,13 +79,6 @@ where p.enabled = 1
   and p.is_deleted = 0
 order by p.modified_on desc
 `;
-
-type StoreFile = {
-  version: 1;
-  activeSnapshotId: string | null;
-  settings: PersistedSettings;
-  snapshots: OpsLedgerSnapshot[];
-};
 
 type SettingsUpdate = {
   dockerSocketPath?: string;
@@ -213,7 +220,8 @@ const defaultSettings: PersistedSettings = {
 
 const globalOpsLedger = globalThis as typeof globalThis & {
   __opsLedgerScheduler?: NodeJS.Timeout;
-  __opsLedgerScanPromise?: Promise<StoreFile>;
+  __opsLedgerScanPromise?: Promise<void>;
+  __opsLedgerDbReady?: Promise<void>;
 };
 
 function getFallbackSnapshot(settings: PersistedSettings, message?: string) {
@@ -224,10 +232,7 @@ function detectHostAddress() {
   const interfaces = os.networkInterfaces();
 
   for (const item of Object.values(interfaces)) {
-    if (!item) {
-      continue;
-    }
-
+    if (!item) continue;
     for (const address of item) {
       if (address.family === "IPv4" && !address.internal) {
         return address.address;
@@ -242,8 +247,7 @@ function normalizeSettings(input: Partial<PersistedSettings> = {}): PersistedSet
   const hostAddress = input.hostAddress ?? defaultSettings.hostAddress;
   const hostLabel = input.hostLabel ?? defaultSettings.hostLabel;
   const dnsBaselineMode = input.dnsBaseline?.mode ?? defaultSettings.dnsBaseline.mode;
-  const dnsBaselineValue =
-    input.dnsBaseline?.value ?? defaultSettings.dnsBaseline.value;
+  const dnsBaselineValue = input.dnsBaseline?.value ?? defaultSettings.dnsBaseline.value;
   const intervalMinutes = input.scanConfig?.intervalMinutes;
   const retentionLimit = input.scanConfig?.retentionLimit;
 
@@ -257,9 +261,7 @@ function normalizeSettings(input: Partial<PersistedSettings> = {}): PersistedSet
       value: dnsBaselineValue.trim(),
     },
     scanConfig: {
-      intervalEnabled:
-        input.scanConfig?.intervalEnabled ??
-        defaultSettings.scanConfig.intervalEnabled,
+      intervalEnabled: input.scanConfig?.intervalEnabled ?? defaultSettings.scanConfig.intervalEnabled,
       intervalMinutes:
         typeof intervalMinutes === "number" && intervalMinutes > 0
           ? intervalMinutes
@@ -277,60 +279,32 @@ function normalizeSettings(input: Partial<PersistedSettings> = {}): PersistedSet
       lastDeliveryStatus: input.webhookConfig?.lastDeliveryStatus ?? null,
     },
     authOverrides: Array.isArray(input.authOverrides) ? input.authOverrides.map(String) : [],
-    suppressedFindings: Array.isArray(input.suppressedFindings) ? input.suppressedFindings.map(String) : [],
+    suppressedFindings: [],
   };
 }
 
 function normalizeDnsMode(mode: string): DnsBaselineMode {
-  if (mode === "reference_hostname" || mode === "manual_endpoint") {
-    return mode;
-  }
-
+  if (mode === "reference_hostname" || mode === "manual_endpoint") return mode;
   return "disabled";
 }
 
-async function ensureStore() {
-  await mkdir(STORE_DIRECTORY, { recursive: true });
-
-  if (!existsSync(STORE_PATH)) {
-    const initialStore: StoreFile = {
-      version: 1 as const,
-      activeSnapshotId: null,
-      settings: normalizeSettings(),
-      snapshots: [],
-    };
-
-    await writeStore(initialStore);
-    return initialStore;
-  }
-
-  const raw = await readFile(STORE_PATH, "utf8");
-  const parsed = JSON.parse(raw) as Partial<StoreFile>;
-
+function normalizeSnapshot(snapshot: Partial<OpsLedgerSnapshot>): OpsLedgerSnapshot {
   return {
-    version: 1 as const,
-    activeSnapshotId: parsed.activeSnapshotId ?? null,
-    settings: normalizeSettings(parsed.settings),
-    snapshots: Array.isArray(parsed.snapshots)
-      ? parsed.snapshots.map(normalizeSnapshot)
+    ...(snapshot as OpsLedgerSnapshot),
+    connectors: Array.isArray(snapshot.connectors) ? snapshot.connectors : [],
+    workloads: Array.isArray(snapshot.workloads)
+      ? snapshot.workloads.map((w) => ({ ...w, createdAt: w.createdAt ?? null, latestImageTag: w.latestImageTag ?? null }))
       : [],
+    routes: Array.isArray(snapshot.routes)
+      ? snapshot.routes.map((r) => ({ ...r, selfAuthDetected: r.selfAuthDetected ?? false }))
+      : [],
+    findings: Array.isArray(snapshot.findings) ? snapshot.findings : [],
+    workloadFindings: Array.isArray(snapshot.workloadFindings) ? snapshot.workloadFindings : [],
+    changes: Array.isArray(snapshot.changes) ? snapshot.changes : [],
   };
 }
 
-async function writeStore(store: StoreFile) {
-  const temporaryPath = path.join(
-    STORE_DIRECTORY,
-    `store.${process.pid}.${Date.now()}.tmp`,
-  );
-
-  await writeFile(temporaryPath, JSON.stringify(store, null, 2), "utf8");
-  await rename(temporaryPath, STORE_PATH);
-}
-
-function attachCurrentSettings(
-  snapshot: OpsLedgerSnapshot,
-  settings: PersistedSettings,
-) {
+function attachCurrentSettings(snapshot: OpsLedgerSnapshot, settings: PersistedSettings) {
   return {
     ...snapshot,
     dnsBaseline: {
@@ -353,97 +327,105 @@ function attachCurrentSettings(
   };
 }
 
-function normalizeSnapshot(snapshot: Partial<OpsLedgerSnapshot>): OpsLedgerSnapshot {
-  return {
-    ...(snapshot as OpsLedgerSnapshot),
-    connectors: Array.isArray(snapshot.connectors) ? snapshot.connectors : [],
-    workloads: Array.isArray(snapshot.workloads)
-      ? snapshot.workloads.map((w) => ({ ...w, createdAt: w.createdAt ?? null, latestImageTag: w.latestImageTag ?? null }))
-      : [],
-    routes: Array.isArray(snapshot.routes)
-      ? snapshot.routes.map((r) => ({ ...r, selfAuthDetected: r.selfAuthDetected ?? false }))
-      : [],
-    findings: Array.isArray(snapshot.findings) ? snapshot.findings : [],
-    workloadFindings: Array.isArray(snapshot.workloadFindings) ? snapshot.workloadFindings : [],
-    changes: Array.isArray(snapshot.changes) ? snapshot.changes : [],
-  };
-}
-
-function getNextScheduledAt(
-  generatedAt: string | null,
-  enabled: boolean,
-  intervalMinutes: number,
-) {
-  if (!generatedAt || !enabled) {
-    return null;
-  }
-
+function getNextScheduledAt(generatedAt: string | null, enabled: boolean, intervalMinutes: number) {
+  if (!generatedAt || !enabled) return null;
   const date = new Date(generatedAt);
   date.setMinutes(date.getMinutes() + intervalMinutes);
   return date.toISOString();
 }
 
-function getActiveSnapshot(store: StoreFile) {
-  const active = store.snapshots.find(
-    (snapshot) => snapshot.id === store.activeSnapshotId,
-  );
+// ── DB bootstrap + store.json migration ───────────────────────────────────────
 
-  if (active) {
-    return attachCurrentSettings(active, store.settings);
+export async function ensureDb(): Promise<void> {
+  if (!globalOpsLedger.__opsLedgerDbReady) {
+    globalOpsLedger.__opsLedgerDbReady = (async () => {
+      await runMigrations();
+      await migrateStoreJsonIfPresent();
+    })();
   }
-
-  const latest = store.snapshots.at(-1);
-  return latest ? attachCurrentSettings(latest, store.settings) : null;
+  return globalOpsLedger.__opsLedgerDbReady;
 }
 
+type LegacyStoreFile = {
+  version: 1;
+  activeSnapshotId: string | null;
+  settings: Partial<PersistedSettings>;
+  snapshots: Partial<OpsLedgerSnapshot>[];
+};
+
+async function migrateStoreJsonIfPresent(): Promise<void> {
+  if (!existsSync(STORE_PATH)) return;
+
+  const count = await dbGetSnapshotCount();
+  if (count > 0) {
+    // Already migrated — rename to .migrated so we don't re-process
+    await rename(STORE_PATH, STORE_PATH + ".migrated").catch(() => null);
+    return;
+  }
+
+  try {
+    const raw = await readFile(STORE_PATH, "utf8");
+    const parsed = JSON.parse(raw) as Partial<LegacyStoreFile>;
+    const settings = normalizeSettings(parsed.settings ?? {});
+    await dbUpsertSettings(settings);
+
+    const snapshots = Array.isArray(parsed.snapshots)
+      ? parsed.snapshots.map(normalizeSnapshot)
+      : [];
+
+    for (const snap of snapshots) {
+      await dbInsertSnapshot(snap);
+    }
+
+    if (parsed.activeSnapshotId) {
+      await dbSetActiveSnapshot(parsed.activeSnapshotId).catch(() => null);
+    }
+
+    await rename(STORE_PATH, STORE_PATH + ".migrated");
+  } catch (err) {
+    console.error("[ops-ledger] store.json migration failed:", err);
+  }
+}
+
+// ── Settings helpers ───────────────────────────────────────────────────────────
+
+async function getSettings(): Promise<PersistedSettings> {
+  const settings = await dbGetSettings();
+  return settings ?? normalizeSettings();
+}
+
+// ── Scheduler ─────────────────────────────────────────────────────────────────
+
 function isDue(snapshot: OpsLedgerSnapshot | null, settings: PersistedSettings) {
-  if (!snapshot) {
-    return true;
-  }
-
-  if (!settings.scanConfig.intervalEnabled) {
-    return false;
-  }
-
+  if (!snapshot) return true;
+  if (!settings.scanConfig.intervalEnabled) return false;
   const dueAt = new Date(snapshot.generatedAt);
   dueAt.setMinutes(dueAt.getMinutes() + settings.scanConfig.intervalMinutes);
-
   return Date.now() >= dueAt.getTime();
 }
 
 function ensureScheduler() {
-  if (globalOpsLedger.__opsLedgerScheduler) {
-    return;
-  }
-
-  const timer = setInterval(() => {
-    void runDueScan();
-  }, 10_000);
-
+  if (globalOpsLedger.__opsLedgerScheduler) return;
+  const timer = setInterval(() => { void runDueScan(); }, 10_000);
   timer.unref?.();
   globalOpsLedger.__opsLedgerScheduler = timer;
 }
 
-async function runExclusiveScan(task: () => Promise<StoreFile>) {
+async function runExclusiveScan(task: () => Promise<void>): Promise<void> {
   if (!globalOpsLedger.__opsLedgerScanPromise) {
     globalOpsLedger.__opsLedgerScanPromise = task().finally(() => {
       globalOpsLedger.__opsLedgerScanPromise = undefined;
     });
   }
-
   return globalOpsLedger.__opsLedgerScanPromise;
 }
 
-async function runDueScan() {
+async function runDueScan(): Promise<void> {
   return runExclusiveScan(async () => {
-    const store = await ensureStore();
-    const snapshot = getActiveSnapshot(store);
-
-    if (!isDue(snapshot, store.settings)) {
-      return store;
-    }
-
-    return runScanAndPersist(store);
+    await ensureDb();
+    const [settings, snapshot] = await Promise.all([getSettings(), dbGetActiveSnapshot()]);
+    if (!isDue(snapshot, settings)) return;
+    await runScanAndPersist(settings);
   });
 }
 
@@ -1840,24 +1822,25 @@ function https_request(
   return req;
 }
 
-async function runScanAndPersist(store: StoreFile) {
-  const snapshot = await buildSnapshot(store.settings);
-  const previous = getActiveSnapshot(store);
+async function runScanAndPersist(settings: PersistedSettings): Promise<void> {
+  const suppressedKeys = await dbGetSuppressedFindings();
+  const settingsWithSuppressed = { ...settings, suppressedFindings: suppressedKeys };
+  const snapshot = await buildSnapshot(settingsWithSuppressed);
+  const previous = await dbGetActiveSnapshot();
   const changes = previous ? diffSnapshots(previous, snapshot) : [];
   const snapshotWithChanges = { ...snapshot, changes };
-  const retentionLimit = store.settings.scanConfig.retentionLimit;
-  const snapshots = [...store.snapshots, snapshotWithChanges].slice(-retentionLimit);
 
-  // Fire webhook for new findings (fire-and-forget, updates delivery status)
-  const wh = store.settings.webhookConfig;
-  let updatedWebhookConfig = wh;
+  await dbInsertSnapshot(snapshotWithChanges);
+  await dbSetActiveSnapshot(snapshotWithChanges.id);
+  await dbPruneSnapshots(settings.scanConfig.retentionLimit);
+
+  // Fire webhook for new findings
+  const wh = settings.webhookConfig;
   if (wh.enabled && wh.url) {
-    const prevFindingIds = new Set((previous?.findings ?? []).map((f) => f.id));
-    const threshold = wh.severityThreshold === "high_medium"
-      ? ["high", "medium"]
-      : ["high"];
+    const prevFindingIds = new Set((previous?.findings ?? []).map((f: Finding) => f.id));
+    const threshold = wh.severityThreshold === "high_medium" ? ["high", "medium"] : ["high"];
     const newFindings = snapshotWithChanges.findings.filter(
-      (f) => !prevFindingIds.has(f.id) && threshold.includes(f.severity),
+      (f: Finding) => !prevFindingIds.has(f.id) && threshold.includes(f.severity),
     );
     if (newFindings.length > 0) {
       const result = await fireWebhook(wh.url, {
@@ -1865,7 +1848,7 @@ async function runScanAndPersist(store: StoreFile) {
         hostLabel: snapshotWithChanges.hostLabel,
         hostAddress: snapshotWithChanges.hostAddress,
         newFindingCount: newFindings.length,
-        findings: newFindings.map((f) => ({
+        findings: newFindings.map((f: Finding) => ({
           id: f.id,
           routeSlug: f.routeSlug,
           type: f.type,
@@ -1874,28 +1857,20 @@ async function runScanAndPersist(store: StoreFile) {
           evidence: f.evidence,
         })),
       });
-      updatedWebhookConfig = {
-        ...wh,
-        lastDeliveryAt: snapshotWithChanges.generatedAt,
-        lastDeliveryStatus: result.success ? "success" : "failed",
-      };
+      await dbUpsertSettings({
+        ...settings,
+        webhookConfig: {
+          ...wh,
+          lastDeliveryAt: snapshotWithChanges.generatedAt,
+          lastDeliveryStatus: result.success ? "success" : "failed",
+        },
+      });
     }
   }
-
-  const nextStore: StoreFile = {
-    ...store,
-    activeSnapshotId: snapshotWithChanges.id,
-    snapshots,
-    settings: { ...store.settings, webhookConfig: updatedWebhookConfig },
-  };
-
-  await writeStore(nextStore);
-  return nextStore;
 }
 
 function getRecentChanges(snapshots: OpsLedgerSnapshot[]) {
-  // Collect changes from last 5 snapshots, dedupe by id, keep most severe
-  const seen = new Map<string, (typeof snapshots)[0]["changes"][0]>();
+  const seen = new Map<string, OpsLedgerSnapshot["changes"][0]>();
   for (const snap of snapshots.slice(-5)) {
     for (const change of snap.changes ?? []) {
       if (!seen.has(change.id)) seen.set(change.id, change);
@@ -1905,109 +1880,102 @@ function getRecentChanges(snapshots: OpsLedgerSnapshot[]) {
   return [...seen.values()].sort((a, b) => order[a.severity] - order[b.severity]);
 }
 
-export async function getOpsLedgerState(): Promise<OpsLedgerState> {
-  ensureScheduler();
+async function loadState(): Promise<OpsLedgerState> {
+  await ensureDb();
+  const [settings, rawSnapshot, allSnapshots, suppressedKeys] = await Promise.all([
+    getSettings(),
+    dbGetActiveSnapshot(),
+    dbGetSnapshots(576),
+    dbGetSuppressedFindings(),
+  ]);
 
-  const store = await runDueScan();
-  const snapshot = getActiveSnapshot(store);
+  const suppressedSet = new Set(suppressedKeys);
+  const settingsWithSuppressed = { ...settings, suppressedFindings: suppressedKeys };
 
-  if (!snapshot) {
+  if (!rawSnapshot) {
     return {
-      snapshot: getFallbackSnapshot(store.settings),
+      snapshot: getFallbackSnapshot(settingsWithSuppressed),
       snapshots: [],
       history: [],
-      settings: store.settings,
+      settings: settingsWithSuppressed,
       recentChanges: [],
     };
   }
 
+  const snapshot = attachCurrentSettings(rawSnapshot, settingsWithSuppressed);
+
+  // Apply display-time suppression filter to the loaded snapshot
+  const filtered = {
+    ...snapshot,
+    findings: snapshot.findings.filter(
+      (f) => !suppressedSet.has(suppressionKey(f.type, f.routeSlug)),
+    ),
+    workloadFindings: (snapshot.workloadFindings ?? []).filter(
+      (f) => !suppressedSet.has(suppressionKey(f.type, f.workloadName)),
+    ),
+  };
+
   return {
-    snapshot,
-    snapshots: store.snapshots,
-    history: getHistoryPoints(store.snapshots),
-    settings: store.settings,
-    recentChanges: getRecentChanges(store.snapshots),
+    snapshot: filtered,
+    snapshots: allSnapshots,
+    history: getHistoryPoints(allSnapshots),
+    settings: settingsWithSuppressed,
+    recentChanges: getRecentChanges(allSnapshots),
   };
 }
 
-export async function triggerManualScan() {
-  const store = await runExclusiveScan(async () => {
-    const currentStore = await ensureStore();
-    return runScanAndPersist(currentStore);
+export async function getOpsLedgerState(): Promise<OpsLedgerState> {
+  ensureScheduler();
+  await ensureDb();
+
+  // If we already have a snapshot, return it immediately and let the scheduler
+  // handle background refresh. This keeps page loads fast after first boot.
+  const existing = await dbGetActiveSnapshot();
+  if (existing) {
+    void runDueScan();
+    return loadState();
+  }
+
+  // First boot: no snapshot yet — must block until the first scan completes.
+  await runDueScan();
+  return loadState();
+}
+
+export async function triggerManualScan(): Promise<OpsLedgerState> {
+  await runExclusiveScan(async () => {
+    await ensureDb();
+    const settings = await getSettings();
+    await runScanAndPersist(settings);
   });
-
-  const snapshot = getActiveSnapshot(store) ?? getFallbackSnapshot(store.settings);
-
-  return {
-    snapshot,
-    snapshots: store.snapshots,
-    history: getHistoryPoints(store.snapshots),
-    settings: store.settings,
-    recentChanges: getRecentChanges(store.snapshots),
-  } satisfies OpsLedgerState;
+  return loadState();
 }
 
-export async function saveSettings(
-  input: SettingsUpdate,
-): Promise<OpsLedgerState> {
-  const store = await ensureStore();
-  const nextStore: StoreFile = {
-    ...store,
-    version: 1 as const,
-    settings: normalizeSettings({
-      ...store.settings,
-      ...input,
-      dnsBaseline: {
-        ...store.settings.dnsBaseline,
-        ...input.dnsBaseline,
-      },
-      scanConfig: {
-        ...store.settings.scanConfig,
-        ...input.scanConfig,
-      },
-      webhookConfig: {
-        ...store.settings.webhookConfig,
-        ...input.webhookConfig,
-      },
-      authOverrides: input.authOverrides ?? store.settings.authOverrides,
-      suppressedFindings: input.suppressedFindings ?? store.settings.suppressedFindings,
-    }),
-  };
-
-  await writeStore(nextStore);
-  const snapshot = getActiveSnapshot(nextStore);
-
-  return {
-    snapshot: snapshot ?? getFallbackSnapshot(nextStore.settings),
-    snapshots: nextStore.snapshots,
-    history: getHistoryPoints(nextStore.snapshots),
-    settings: nextStore.settings,
-    recentChanges: getRecentChanges(nextStore.snapshots),
-  };
+export async function saveSettings(input: SettingsUpdate): Promise<OpsLedgerState> {
+  await ensureDb();
+  const current = await getSettings();
+  const next = normalizeSettings({
+    ...current,
+    ...input,
+    dnsBaseline: { ...current.dnsBaseline, ...input.dnsBaseline },
+    scanConfig: { ...current.scanConfig, ...input.scanConfig },
+    webhookConfig: { ...current.webhookConfig, ...input.webhookConfig },
+    authOverrides: input.authOverrides ?? current.authOverrides,
+  });
+  await dbUpsertSettings(next);
+  return loadState();
 }
 
 export async function suppressFinding(key: string): Promise<void> {
-  const store = await ensureStore();
-  const current = store.settings.suppressedFindings ?? [];
-  if (current.includes(key)) return;
-  const nextStore: StoreFile = {
-    ...store,
-    settings: { ...store.settings, suppressedFindings: [...current, key] },
-  };
-  await writeStore(nextStore);
+  await ensureDb();
+  await dbSuppressFinding(key);
 }
 
 export async function unsuppressFinding(key: string): Promise<void> {
-  const store = await ensureStore();
-  const current = store.settings.suppressedFindings ?? [];
-  const nextStore: StoreFile = {
-    ...store,
-    settings: { ...store.settings, suppressedFindings: current.filter((k) => k !== key) },
-  };
-  await writeStore(nextStore);
+  await ensureDb();
+  await dbUnsuppressFinding(key);
 }
 
 export async function getSuppressedFindings(): Promise<string[]> {
-  const store = await ensureStore();
-  return store.settings.suppressedFindings ?? [];
+  await ensureDb();
+  return dbGetSuppressedFindings();
 }
