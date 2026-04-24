@@ -63,7 +63,7 @@ export default function LoginPage() {
       <div className="mb-8 text-center">
         <div className="font-mono text-accent text-2xl font-bold tracking-widest mb-1"
           style={{ textShadow: "0 0 16px rgba(57,255,122,0.5)" }}>
-          OPS-LEDGER
+          NETCANARY
         </div>
         <div className="font-mono text-muted text-xs tracking-widest uppercase">
           <span className="text-accent/40 mr-1">##</span>sign in

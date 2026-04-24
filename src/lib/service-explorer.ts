@@ -489,7 +489,7 @@ function buildInternalService(
     impactItems: [],
     notes: compactNotes([
       `No public DNS or reverse-proxy hop is associated with ${label} in the current snapshot.`,
-      `Ops Ledger is showing this service because it publishes ${endpoint}.`,
+      `Netcanary is showing this service because it publishes ${endpoint}.`,
       composePath ? `Primary compose path: ${composePath}` : null,
     ]),
     findings: [],
