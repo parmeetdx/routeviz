@@ -65,8 +65,28 @@ export function createWorkloadFindings(
       });
     }
 
+    // ── IMAGE VERSION CHECKS ───────────────────────────────────────────────
+    const { imageUpdateStatus, latestImageTag } = workload;
+
+    // Confirmed outdated — pinned semver and latest is higher
+    if (imageUpdateStatus === "outdated" && !suppressed.has(suppressionKey("image_outdated", workload.name))) {
+      findings.push({
+        id: `${workload.id}-image_outdated`,
+        workloadId: workload.id,
+        workloadName: workload.name,
+        type: "image_outdated",
+        severity: "low",
+        title: `${workload.name} is running an outdated image`,
+        evidence: `Running ${workload.image} — latest available on Docker Hub is ${latestImageTag}.`,
+        nextCheck: "Update the image tag in your compose file and recreate the container.",
+      });
+    }
+
+    // Unpinned (:latest or untagged) — nudge to check + pin
     if (isLatestTag && !suppressed.has(suppressionKey("image_latest", workload.name))) {
-      const latestNote = workload.latestImageTag ? ` Latest available version on Docker Hub: ${workload.latestImageTag}.` : "";
+      const nudge = imageUpdateStatus === "unknown" && latestImageTag
+        ? ` Latest stable release on Docker Hub is ${latestImageTag} — verify your running container matches it.`
+        : "";
       findings.push({
         id: `${workload.id}-image_latest`,
         workloadId: workload.id,
@@ -74,16 +94,43 @@ export function createWorkloadFindings(
         type: "image_latest",
         severity: "low",
         title: `${workload.name} is running an unpinned image tag`,
-        evidence: `Image: ${workload.image}. Using :latest or an untagged image means updates are unpredictable — the container may silently change behaviour after a pull.${latestNote}`,
+        evidence: `Image: ${workload.image}. Using :latest or an untagged image means updates are unpredictable — the container may silently change behaviour after a pull.${nudge}`,
         nextCheck: "Pin the image to a specific version tag in your compose file to get predictable, auditable deployments.",
+      });
+    }
+
+    // No data at all — private registry or image not on Docker Hub
+    if (imageUpdateStatus === "no_data" && !isLatestTag && !suppressed.has(suppressionKey("image_no_data", workload.name))) {
+      findings.push({
+        id: `${workload.id}-image_no_data`,
+        workloadId: workload.id,
+        workloadName: workload.name,
+        type: "image_no_data",
+        severity: "low",
+        title: `${workload.name} version can't be checked`,
+        evidence: `Running ${workload.image}. No version information was found on Docker Hub — the image may be from a private registry or not published there.`,
+        nextCheck: "Check the image source manually and confirm the running version is current.",
+      });
+    }
+
+    // Pinned but non-semver (can't compare) — nudge to check manually
+    if (!isLatestTag && imageUpdateStatus === "unknown" && latestImageTag && !suppressed.has(suppressionKey("image_check", workload.name))) {
+      findings.push({
+        id: `${workload.id}-image_check`,
+        workloadId: workload.id,
+        workloadName: workload.name,
+        type: "image_check",
+        severity: "low",
+        title: `${workload.name} may have a newer version available`,
+        evidence: `Running ${workload.image}. Latest tag on Docker Hub is ${latestImageTag} — version scheme can't be compared automatically.`,
+        nextCheck: "Check the project's release page to confirm whether an upgrade is needed.",
       });
     }
 
     if (workload.createdAt && !suppressed.has(suppressionKey("image_stale", workload.name))) {
       const ageMs = Date.now() - new Date(workload.createdAt).getTime();
       const ageDays = Math.floor(ageMs / (1000 * 60 * 60 * 24));
-      if (ageDays > 90) {
-        const latestNote = workload.latestImageTag ? ` Latest available version on Docker Hub: ${workload.latestImageTag}.` : "";
+      if (ageDays > 180) {
         findings.push({
           id: `${workload.id}-image_stale`,
           workloadId: workload.id,
@@ -91,7 +138,7 @@ export function createWorkloadFindings(
           type: "image_stale",
           severity: "low",
           title: `${workload.name} has not been recreated in ${ageDays} days`,
-          evidence: `Container started ${ageDays} days ago (${workload.createdAt.slice(0, 10)}). Long-running containers may be missing security patches from newer image releases.${latestNote}`,
+          evidence: `Container started ${ageDays} days ago (${workload.createdAt.slice(0, 10)}). Long-running containers may be missing security patches from newer image releases.`,
           nextCheck: "Pull the latest image and recreate the container to pick up any upstream security fixes.",
         });
       }
