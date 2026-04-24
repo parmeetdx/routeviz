@@ -3,36 +3,54 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: netcanary
-      POSTGRES_USER: netcanary
+      POSTGRES_DB: routeviz
+      POSTGRES_USER: routeviz
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U netcanary"]
+      test: ["CMD-SHELL", "pg_isready -U routeviz"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  netcanary:
+  routeviz:
     build: .
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT:-8141}:3000"
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
-      DATABASE_URL: postgresql://netcanary:${POSTGRES_PASSWORD:-changeme}@postgres:5432/netcanary
+      DATABASE_URL: postgresql://routeviz:${POSTGRES_PASSWORD:-changeme}@postgres:5432/routeviz
       NODE_ENV: production
+      HOST_ADDRESS: ${HOST_ADDRESS:-}
     volumes:
-      # Docker socket for container scanning
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # NPM SQLite database (adjust path to match your setup)
-      - /docker/apps/nginx-proxy-manager/data:/npm-data:ro
-      # Preserve store.json for one-time migration on first boot
-      - netcanary_data:/app/.netcanary
+      - ${NPM_DATA_PATH:-/opt/nginx-proxy-manager/data}:/npm-data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    environment:
+      DATABASE_URL: postgresql://routeviz:${POSTGRES_PASSWORD:-changeme}@postgres:5432/routeviz
+      NODE_ENV: production
+      HOST_ADDRESS: ${HOST_ADDRESS:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${NPM_DATA_PATH:-/opt/nginx-proxy-manager/data}:/npm-data:ro
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
   postgres_data:
-  netcanary_data:

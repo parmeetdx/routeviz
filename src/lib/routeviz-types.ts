@@ -194,7 +194,10 @@ export interface PersistedSettings {
   dockerSocketPath: string;
   hostAddress: string | null;
   hostLabel: string;
+  npmConnectorMode: "sqlite" | "api";
   npmSqlitePath: string;
+  npmApiUrl: string;
+  npmApiToken: string;
   dnsBaseline: {
     mode: DnsBaselineMode;
     value: string;
