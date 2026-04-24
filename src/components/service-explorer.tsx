@@ -10,6 +10,7 @@ import type {
   ExplorerRiskCheck,
   ExplorerService,
   ServiceExplorerModel,
+  SparklinePoint,
 } from "@/lib/service-explorer";
 import {
   compactFindingHeadline,
@@ -460,6 +461,12 @@ function ServiceDetail({ service }: { service: ExplorerService }) {
           <span className="text-accent/40 mr-1">$</span>
           {service.summary}
         </div>
+
+        {service.availabilitySparkline.length > 0 && (
+          <div className="mt-3">
+            <AvailabilitySparkline points={service.availabilitySparkline} />
+          </div>
+        )}
       </section>
 
       {/* ── Findings ── */}
@@ -758,4 +765,49 @@ function getTopFinding(findings: Finding[]) {
 
 function toDetailHref(href: string) {
   return href.includes("#service-detail") ? href : `${href}#service-detail`;
+}
+
+function sparklineColor(state: string) {
+  if (state === "matched" || state === "direct") return "bg-accent";
+  if (state === "ambiguous" || state === "off_host") return "bg-warning";
+  return "bg-danger";
+}
+
+function sparklineLabel(state: string) {
+  if (state === "matched") return "matched";
+  if (state === "direct") return "direct (bare-metal)";
+  if (state === "ambiguous") return "ambiguous";
+  if (state === "off_host") return "off-host target";
+  if (state === "unmatched") return "unmatched";
+  return state;
+}
+
+function AvailabilitySparkline({ points }: { points: SparklinePoint[] }) {
+  // Show last 48 points max, display as thin bars
+  const visible = points.slice(-48);
+  const matchedCount = visible.filter((p) => p.state === "matched" || p.state === "direct").length;
+  const pct = Math.round((matchedCount / visible.length) * 100);
+
+  return (
+    <div className="border border-border/40 bg-panel-2 px-4 py-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="font-mono text-[0.58rem] uppercase tracking-[0.3em] text-muted/50">
+          AVAILABILITY · LAST {visible.length} SCANS
+        </span>
+        <span className={`font-mono text-[0.65rem] tabular-nums ${pct === 100 ? "text-accent" : pct >= 80 ? "text-warning" : "text-danger"}`}>
+          {pct}% UP
+        </span>
+      </div>
+      <div className="flex items-end gap-px h-5">
+        {visible.map((point, i) => (
+          <div
+            key={i}
+            title={`${point.generatedAt.slice(0, 16).replace("T", " ")} — ${sparklineLabel(point.state)}`}
+            className={`flex-1 min-w-0 rounded-sm transition-opacity ${sparklineColor(point.state)} ${i === visible.length - 1 ? "opacity-100" : "opacity-70 hover:opacity-100"}`}
+            style={{ height: point.state === "matched" || point.state === "direct" ? "100%" : "40%" }}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }

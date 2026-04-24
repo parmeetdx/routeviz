@@ -75,6 +75,9 @@ export default function SetupConsole({
   const [authOverrides, setAuthOverrides] = useState(
     (settings.authOverrides ?? []).join("\n"),
   );
+  const [suppressedFindings, setSuppressedFindings] = useState<string[]>(
+    settings.suppressedFindings ?? [],
+  );
   const [webhookEnabled, setWebhookEnabled] = useState(settings.webhookConfig?.enabled ?? false);
   const [webhookUrl, setWebhookUrl] = useState(settings.webhookConfig?.url ?? "");
   const [webhookThreshold, setWebhookThreshold] = useState<"high" | "high_medium">(
@@ -532,6 +535,54 @@ export default function SetupConsole({
                 <p className="font-mono text-[0.6rem] text-muted/40">
                   <span className="text-accent/40 mr-1">$</span>
                   Popular apps with built-in login (Jellyfin, Vaultwarden, Immich, etc.) are detected automatically.
+                </p>
+              </div>
+            </section>
+          </div>
+
+          {/* ── Suppressed findings ── */}
+          <div id="suppressions" className="space-y-3">
+            <section className="border border-border/60 bg-panel">
+              <div className="border-b border-border/40 px-4 py-2.5">
+                <p className="font-mono text-[0.62rem] uppercase tracking-[0.26em] text-muted/70">
+                  <span className="text-accent/40 mr-1">▸</span>SUPPRESSED_FINDINGS
+                </p>
+              </div>
+              <div className="px-4 py-4 space-y-3">
+                {suppressedFindings.length === 0 ? (
+                  <p className="font-mono text-xs text-muted/50">
+                    No findings suppressed. Use the <span className="text-foreground/60">suppress</span> button on any finding in the issue board to silence it from future snapshots.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {suppressedFindings.map((key) => (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between gap-3 border border-border/40 bg-panel-2 px-3 py-2"
+                      >
+                        <span className="font-mono text-xs text-muted/70">{key}</span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await fetch("/api/suppress", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ key, action: "unsuppress" }),
+                            });
+                            setSuppressedFindings((prev) => prev.filter((k) => k !== key));
+                            router.refresh();
+                          }}
+                          className="font-mono text-[0.6rem] uppercase tracking-wider border border-danger/30 bg-danger/8 px-2 py-1 text-danger/70 transition hover:bg-danger/18 hover:text-danger whitespace-nowrap"
+                        >
+                          unsuppress
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="font-mono text-[0.6rem] text-muted/40">
+                  <span className="text-accent/40 mr-1">$</span>
+                  Suppressed findings are excluded from snapshots. Unsuppressing re-enables detection at the next scan.
                 </p>
               </div>
             </section>
