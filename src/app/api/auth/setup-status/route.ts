@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { dbGetUserCount } from "@/lib/db";
-import { ensureDb } from "@/lib/ops-ledger-server";
+import { ensureDb } from "@/lib/routeviz-server";
 
 export async function GET() {
   try {

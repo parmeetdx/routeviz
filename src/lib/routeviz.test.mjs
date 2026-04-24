@@ -8,7 +8,7 @@ import {
   getRouteDetailBySlug,
   getScanSummary,
   getSeverityCounts,
-} from "./ops-ledger.mjs";
+} from "./routeviz.mjs";
 
 const fixtureSnapshot = {
   id: "snapshot-1",
@@ -20,7 +20,7 @@ const fixtureSnapshot = {
     mode: "disabled",
     value: "",
     helper:
-      "DNS mismatch checks are off. Ops Ledger records answers but does not enforce a baseline.",
+      "DNS mismatch checks are off. Routeviz records answers but does not enforce a baseline.",
   },
   scanConfig: {
     manualEnabled: true,

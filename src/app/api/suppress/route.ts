@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
-import { suppressFinding, unsuppressFinding } from "@/lib/ops-ledger-server";
+import { suppressFinding, unsuppressFinding } from "@/lib/routeviz-server";
 
 export const dynamic = "force-dynamic";
 

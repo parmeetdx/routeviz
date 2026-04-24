@@ -1,8 +1,8 @@
-# Ops Ledger PRD
+# Routeviz PRD
 
 ## Summary
 
-Ops Ledger is an open-source, self-hosted dashboard for homelab and self-hosted operators who expose services through reverse proxies, tunnels, and Docker-published ports.
+Routeviz is an open-source, self-hosted dashboard for homelab and self-hosted operators who expose services through reverse proxies, tunnels, and Docker-published ports.
 
 The v1 product is intentionally narrow:
 
@@ -30,7 +30,7 @@ Self-hosters do not mainly need more dashboards. They need one trustworthy answe
 
 `entrypoint -> edge system -> upstream target -> live workload -> current risk`
 
-If Ops Ledger can make that chain obvious and can flag mismatches, dead targets, DNS issues, or impending TLS problems, it earns repeat usage. If it only restates information the operator already knows, it will be discarded.
+If Routeviz can make that chain obvious and can flag mismatches, dead targets, DNS issues, or impending TLS problems, it earns repeat usage. If it only restates information the operator already knows, it will be discarded.
 
 ## Target User
 
@@ -107,7 +107,7 @@ Initial adopter segment:
 
 ## Core User Questions
 
-Ops Ledger v1 should answer:
+Routeviz v1 should answer:
 
 - What is publicly exposed right now?
 - Where does each public endpoint route?
@@ -117,7 +117,7 @@ Ops Ledger v1 should answer:
 
 ## Core Data Sources
 
-Ops Ledger v1 collects from only three primary sources plus one derived check layer.
+Routeviz v1 collects from only three primary sources plus one derived check layer.
 
 The first release supports only one edge connector, but the model should account for adjacent systems that self-hosters commonly use.
 
@@ -172,17 +172,17 @@ Nginx Proxy Manager's official API schema uses a credential exchange at `POST /a
 
 V1 connector behavior should be:
 
-- Ask the operator to create a dedicated NPM user for Ops Ledger instead of reusing a personal admin login
+- Ask the operator to create a dedicated NPM user for Routeviz instead of reusing a personal admin login
 - Exchange those credentials for an access token during connector setup
 - Store the returned access token and expiry metadata
 - Do not persist the NPM password after setup
 
-Because the official API surface checked for v1 exposes an access token and expiry, but not a documented refresh token flow, Ops Ledger should not invent one.
+Because the official API surface checked for v1 exposes an access token and expiry, but not a documented refresh token flow, Routeviz should not invent one.
 
 Practical v1 consequence:
 
 - Scheduled scans run only while a valid NPM access token is present
-- When the token expires, Ops Ledger marks the connector as requiring re-authentication
+- When the token expires, Routeviz marks the connector as requiring re-authentication
 - The UI should surface this as a connector action, not as a silent scan failure
 
 If 2FA is required on the NPM account, v1 should treat that connector as manual re-auth only unless a documented non-interactive flow is confirmed later.
@@ -211,7 +211,7 @@ The key requirement is that these sources can all be normalized into the same co
 
 ## Exposure Model
 
-Ops Ledger should model exposure generically:
+Routeviz should model exposure generically:
 
 `entrypoint -> edge source -> route -> target endpoint -> workload -> finding`
 
@@ -425,7 +425,7 @@ V1 finding behavior:
 Each finding should explain:
 
 - what was observed
-- why Ops Ledger thinks it matters
+- why Routeviz thinks it matters
 - how confident the system is
 - what the operator should check next
 
@@ -441,7 +441,7 @@ Suggested next checks:
 
 Example copy for `ambiguous_target`:
 
-`photos.example.com` routes to `media:8080`, and the latest scan found more than one plausible Docker workload that could satisfy that target on the scanned host. Ops Ledger did not choose one automatically because the route-to-workload link is not trustworthy enough yet.
+`photos.example.com` routes to `media:8080`, and the latest scan found more than one plausible Docker workload that could satisfy that target on the scanned host. Routeviz did not choose one automatically because the route-to-workload link is not trustworthy enough yet.
 
 Suggested next checks:
 
@@ -477,7 +477,7 @@ The UI should remain narrow. Three primary views are enough:
 
 ## Auth Model
 
-Even in read-only mode, Ops Ledger exposes sensitive operational information. Basic auth belongs in v1.
+Even in read-only mode, Routeviz exposes sensitive operational information. Basic auth belongs in v1.
 
 V1 auth should be intentionally simple:
 
@@ -490,12 +490,12 @@ The goal is to prevent accidental exposure, not to solve enterprise identity.
 
 ## Deployment Model
 
-Ops Ledger v1 should be easy to run:
+Routeviz v1 should be easy to run:
 
 - One Docker container for the app
 - Mounted Docker socket
 - Network access to NPM plus a dedicated NPM user login for the first connector setup flow
-- One local volume for Ops Ledger's own SQLite database and config
+- One local volume for Routeviz's own SQLite database and config
 
 The install story should fit the expectations of `r/selfhosted` and `r/homelab`: local, inspectable, and easy to tear down.
 

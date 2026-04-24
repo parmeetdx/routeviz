@@ -18,7 +18,7 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Netcanary",
+  title: "Routeviz",
   description:
     "A self-hosted security scanner for Docker workloads — monitors exposed routes, TLS certificates, and container posture behind reverse proxies and tunnels.",
 };

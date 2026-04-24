@@ -3,24 +3,24 @@ import path from "node:path";
 
 import { Pool } from "pg";
 
-import type { OpsLedgerSnapshot, PersistedSettings } from "./ops-ledger-types";
+import type { RoutevizSnapshot, PersistedSettings } from "./routeviz-types";
 
 // ── Connection pool ────────────────────────────────────────────────────────────
 
-const globalDb = globalThis as typeof globalThis & { __opsLedgerPool?: Pool };
+const globalDb = globalThis as typeof globalThis & { __routevizPool?: Pool };
 
 export function getPool(): Pool {
-  if (!globalDb.__opsLedgerPool) {
+  if (!globalDb.__routevizPool) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
       throw new Error(
         "DATABASE_URL environment variable is not set. " +
-        "Add it to your .env file: DATABASE_URL=postgresql://user:password@localhost:5432/netcanary",
+        "Add it to your .env file: DATABASE_URL=postgresql://user:password@localhost:5432/routeviz",
       );
     }
-    globalDb.__opsLedgerPool = new Pool({ connectionString });
+    globalDb.__routevizPool = new Pool({ connectionString });
   }
-  return globalDb.__opsLedgerPool;
+  return globalDb.__routevizPool;
 }
 
 // ── Migration runner ───────────────────────────────────────────────────────────
@@ -173,7 +173,7 @@ export async function dbUpsertSettings(settings: PersistedSettings): Promise<voi
 
 // ── Snapshots ──────────────────────────────────────────────────────────────────
 
-export async function dbInsertSnapshot(snapshot: OpsLedgerSnapshot): Promise<void> {
+export async function dbInsertSnapshot(snapshot: RoutevizSnapshot): Promise<void> {
   const pool = getPool();
   await pool.query(
     `insert into snapshots (id, generated_at, host_label, host_address, payload)
@@ -189,26 +189,26 @@ export async function dbInsertSnapshot(snapshot: OpsLedgerSnapshot): Promise<voi
   );
 }
 
-export async function dbGetSnapshots(limit: number): Promise<OpsLedgerSnapshot[]> {
+export async function dbGetSnapshots(limit: number): Promise<RoutevizSnapshot[]> {
   const pool = getPool();
-  const { rows } = await pool.query<{ payload: OpsLedgerSnapshot }>(
+  const { rows } = await pool.query<{ payload: RoutevizSnapshot }>(
     "select payload from snapshots order by generated_at asc limit $1",
     [limit],
   );
   return rows.map((r) => r.payload);
 }
 
-export async function dbGetLatestSnapshot(): Promise<OpsLedgerSnapshot | null> {
+export async function dbGetLatestSnapshot(): Promise<RoutevizSnapshot | null> {
   const pool = getPool();
-  const { rows } = await pool.query<{ payload: OpsLedgerSnapshot }>(
+  const { rows } = await pool.query<{ payload: RoutevizSnapshot }>(
     "select payload from snapshots order by generated_at desc limit 1",
   );
   return rows[0]?.payload ?? null;
 }
 
-export async function dbGetActiveSnapshot(): Promise<OpsLedgerSnapshot | null> {
+export async function dbGetActiveSnapshot(): Promise<RoutevizSnapshot | null> {
   const pool = getPool();
-  const { rows } = await pool.query<{ payload: OpsLedgerSnapshot }>(
+  const { rows } = await pool.query<{ payload: RoutevizSnapshot }>(
     `select s.payload from active_snapshot a
      join snapshots s on s.id = a.snapshot_id
      where a.id = 1`,

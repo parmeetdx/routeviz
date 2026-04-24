@@ -15,7 +15,7 @@ import {
   getDnsBaselineHelper,
   getHistoryPoints,
   slugify,
-} from "@/lib/ops-ledger.mjs";
+} from "@/lib/routeviz.mjs";
 import { diffSnapshots } from "@/lib/snapshot-differ";
 import {
   dbGetActiveSnapshot,
@@ -37,19 +37,19 @@ import type {
   DnsBaselineMode,
   Finding,
   FindingSeverity,
-  OpsLedgerSnapshot,
-  OpsLedgerState,
+  RoutevizSnapshot,
+  RoutevizState,
   PersistedSettings,
   RelatedWorkload,
   RouteMatchState,
   RouteRecord,
   WorkloadFinding,
   WorkloadRecord,
-} from "@/lib/ops-ledger-types";
+} from "@/lib/routeviz-types";
 
 const execFileAsync = promisify(execFile);
 
-const STORE_DIRECTORY = path.join(process.cwd(), ".ops-ledger");
+const STORE_DIRECTORY = path.join(process.cwd(), ".routeviz");
 const STORE_PATH = path.join(STORE_DIRECTORY, "store.json");
 const DEFAULT_INTERVAL_MINUTES = 5;
 const DEFAULT_RETENTION_LIMIT = 576;
@@ -218,14 +218,14 @@ const defaultSettings: PersistedSettings = {
   suppressedFindings: [],
 };
 
-const globalOpsLedger = globalThis as typeof globalThis & {
-  __opsLedgerScheduler?: NodeJS.Timeout;
-  __opsLedgerScanPromise?: Promise<void>;
-  __opsLedgerDbReady?: Promise<void>;
+const globalRouteViz = globalThis as typeof globalThis & {
+  __routevizScheduler?: NodeJS.Timeout;
+  __routevizScanPromise?: Promise<void>;
+  __routevizDbReady?: Promise<void>;
 };
 
 function getFallbackSnapshot(settings: PersistedSettings, message?: string) {
-  return createFallbackSnapshot(settings, message) as OpsLedgerSnapshot;
+  return createFallbackSnapshot(settings, message) as RoutevizSnapshot;
 }
 
 function detectHostAddress() {
@@ -288,9 +288,9 @@ function normalizeDnsMode(mode: string): DnsBaselineMode {
   return "disabled";
 }
 
-function normalizeSnapshot(snapshot: Partial<OpsLedgerSnapshot>): OpsLedgerSnapshot {
+function normalizeSnapshot(snapshot: Partial<RoutevizSnapshot>): RoutevizSnapshot {
   return {
-    ...(snapshot as OpsLedgerSnapshot),
+    ...(snapshot as RoutevizSnapshot),
     connectors: Array.isArray(snapshot.connectors) ? snapshot.connectors : [],
     workloads: Array.isArray(snapshot.workloads)
       ? snapshot.workloads.map((w) => ({ ...w, createdAt: w.createdAt ?? null, latestImageTag: w.latestImageTag ?? null }))
@@ -304,7 +304,7 @@ function normalizeSnapshot(snapshot: Partial<OpsLedgerSnapshot>): OpsLedgerSnaps
   };
 }
 
-function attachCurrentSettings(snapshot: OpsLedgerSnapshot, settings: PersistedSettings) {
+function attachCurrentSettings(snapshot: RoutevizSnapshot, settings: PersistedSettings) {
   return {
     ...snapshot,
     dnsBaseline: {
@@ -337,20 +337,20 @@ function getNextScheduledAt(generatedAt: string | null, enabled: boolean, interv
 // ── DB bootstrap + store.json migration ───────────────────────────────────────
 
 export async function ensureDb(): Promise<void> {
-  if (!globalOpsLedger.__opsLedgerDbReady) {
-    globalOpsLedger.__opsLedgerDbReady = (async () => {
+  if (!globalRouteViz.__routevizDbReady) {
+    globalRouteViz.__routevizDbReady = (async () => {
       await runMigrations();
       await migrateStoreJsonIfPresent();
     })();
   }
-  return globalOpsLedger.__opsLedgerDbReady;
+  return globalRouteViz.__routevizDbReady;
 }
 
 type LegacyStoreFile = {
   version: 1;
   activeSnapshotId: string | null;
   settings: Partial<PersistedSettings>;
-  snapshots: Partial<OpsLedgerSnapshot>[];
+  snapshots: Partial<RoutevizSnapshot>[];
 };
 
 async function migrateStoreJsonIfPresent(): Promise<void> {
@@ -383,7 +383,7 @@ async function migrateStoreJsonIfPresent(): Promise<void> {
 
     await rename(STORE_PATH, STORE_PATH + ".migrated");
   } catch (err) {
-    console.error("[ops-ledger] store.json migration failed:", err);
+    console.error("[routeviz] store.json migration failed:", err);
   }
 }
 
@@ -396,7 +396,7 @@ async function getSettings(): Promise<PersistedSettings> {
 
 // ── Scheduler ─────────────────────────────────────────────────────────────────
 
-function isDue(snapshot: OpsLedgerSnapshot | null, settings: PersistedSettings) {
+function isDue(snapshot: RoutevizSnapshot | null, settings: PersistedSettings) {
   if (!snapshot) return true;
   if (!settings.scanConfig.intervalEnabled) return false;
   const dueAt = new Date(snapshot.generatedAt);
@@ -405,19 +405,19 @@ function isDue(snapshot: OpsLedgerSnapshot | null, settings: PersistedSettings) 
 }
 
 function ensureScheduler() {
-  if (globalOpsLedger.__opsLedgerScheduler) return;
+  if (globalRouteViz.__routevizScheduler) return;
   const timer = setInterval(() => { void runDueScan(); }, 10_000);
   timer.unref?.();
-  globalOpsLedger.__opsLedgerScheduler = timer;
+  globalRouteViz.__routevizScheduler = timer;
 }
 
 async function runExclusiveScan(task: () => Promise<void>): Promise<void> {
-  if (!globalOpsLedger.__opsLedgerScanPromise) {
-    globalOpsLedger.__opsLedgerScanPromise = task().finally(() => {
-      globalOpsLedger.__opsLedgerScanPromise = undefined;
+  if (!globalRouteViz.__routevizScanPromise) {
+    globalRouteViz.__routevizScanPromise = task().finally(() => {
+      globalRouteViz.__routevizScanPromise = undefined;
     });
   }
-  return globalOpsLedger.__opsLedgerScanPromise;
+  return globalRouteViz.__routevizScanPromise;
 }
 
 async function runDueScan(): Promise<void> {
@@ -589,7 +589,7 @@ async function fetchLatestImageTag(image: string): Promise<string | null> {
   return new Promise((resolve) => {
     const path = `/v2/repositories/${ref.namespace}/${ref.name}/tags?page_size=10&ordering=last_updated`;
     const req = https.request(
-      { hostname: "hub.docker.com", path, method: "GET", headers: { "User-Agent": "ops-ledger-probe/1.0" } },
+      { hostname: "hub.docker.com", path, method: "GET", headers: { "User-Agent": "routeviz-probe/1.0" } },
       (res) => {
         let body = "";
         res.on("data", (chunk: Buffer) => { body += chunk.toString(); });
@@ -821,7 +821,7 @@ async function matchRouteToWorkload(
         confidence: "low",
         workload: null,
         relatedWorkloads: [],
-        notes: `Multiple workloads publish host port ${targetPort}. Ops Ledger will not guess between them.`,
+        notes: `Multiple workloads publish host port ${targetPort}. Routeviz will not guess between them.`,
       } satisfies MatchResult;
     }
 
@@ -1262,7 +1262,7 @@ function probeHttpAuth(host: string, port: number, timeoutMs = 2000): Promise<bo
     const attempt = (mod: typeof http | typeof https) => {
       try {
         const req = mod.request(
-          { hostname: probeHost, port, path: "/", method: "GET", headers: { "User-Agent": "ops-ledger-probe/1.0" }, rejectUnauthorized: false },
+          { hostname: probeHost, port, path: "/", method: "GET", headers: { "User-Agent": "routeviz-probe/1.0" }, rejectUnauthorized: false },
           (res) => {
             const status = res.statusCode ?? 0;
             if (status === 401) return done(true);
@@ -1296,7 +1296,7 @@ function probeHttpAuth(host: string, port: number, timeoutMs = 2000): Promise<bo
     // Try HTTP first; if it errors out immediately, fall back to HTTPS
     try {
       const req = http.request(
-        { hostname: probeHost, port, path: "/", method: "GET", headers: { "User-Agent": "ops-ledger-probe/1.0" } },
+        { hostname: probeHost, port, path: "/", method: "GET", headers: { "User-Agent": "routeviz-probe/1.0" } },
         (res) => {
           const status = res.statusCode ?? 0;
           if (status === 401) return done(true);
@@ -1389,7 +1389,7 @@ function createFindings(routes: RouteRecord[], suppressed: Set<string>) {
       pushFinding(
         findings, route, "duplicate_proxy_host", "high",
         `${route.entrypoint} exists in ${route.duplicateDomainCount} enabled proxy host records`,
-        `Multiple active NPM rows resolve to ${route.target}. Ops Ledger kept the most recently modified record for the main route view.`,
+        `Multiple active NPM rows resolve to ${route.target}. Routeviz kept the most recently modified record for the main route view.`,
         "Archive or delete the extra proxy host records before one of them drifts silently.",
         suppressed,
       );
@@ -1778,7 +1778,7 @@ async function buildSnapshot(settings: PersistedSettings) {
     findings,
     workloadFindings,
     changes: [],
-  } satisfies OpsLedgerSnapshot;
+  } satisfies RoutevizSnapshot;
 }
 
 function fireWebhook(url: string, payload: object): Promise<{ success: boolean }> {
@@ -1869,8 +1869,8 @@ async function runScanAndPersist(settings: PersistedSettings): Promise<void> {
   }
 }
 
-function getRecentChanges(snapshots: OpsLedgerSnapshot[]) {
-  const seen = new Map<string, OpsLedgerSnapshot["changes"][0]>();
+function getRecentChanges(snapshots: RoutevizSnapshot[]) {
+  const seen = new Map<string, RoutevizSnapshot["changes"][0]>();
   for (const snap of snapshots.slice(-5)) {
     for (const change of snap.changes ?? []) {
       if (!seen.has(change.id)) seen.set(change.id, change);
@@ -1880,7 +1880,7 @@ function getRecentChanges(snapshots: OpsLedgerSnapshot[]) {
   return [...seen.values()].sort((a, b) => order[a.severity] - order[b.severity]);
 }
 
-async function loadState(): Promise<OpsLedgerState> {
+async function loadState(): Promise<RoutevizState> {
   await ensureDb();
   const [settings, rawSnapshot, allSnapshots, suppressedKeys] = await Promise.all([
     getSettings(),
@@ -1924,7 +1924,7 @@ async function loadState(): Promise<OpsLedgerState> {
   };
 }
 
-export async function getOpsLedgerState(): Promise<OpsLedgerState> {
+export async function getRoutevizState(): Promise<RoutevizState> {
   ensureScheduler();
   await ensureDb();
 
@@ -1941,7 +1941,7 @@ export async function getOpsLedgerState(): Promise<OpsLedgerState> {
   return loadState();
 }
 
-export async function triggerManualScan(): Promise<OpsLedgerState> {
+export async function triggerManualScan(): Promise<RoutevizState> {
   await runExclusiveScan(async () => {
     await ensureDb();
     const settings = await getSettings();
@@ -1950,7 +1950,7 @@ export async function triggerManualScan(): Promise<OpsLedgerState> {
   return loadState();
 }
 
-export async function saveSettings(input: SettingsUpdate): Promise<OpsLedgerState> {
+export async function saveSettings(input: SettingsUpdate): Promise<RoutevizState> {
   await ensureDb();
   const current = await getSettings();
   const next = normalizeSettings({
