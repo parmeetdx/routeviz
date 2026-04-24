@@ -11,6 +11,11 @@ export type DnsBaselineMode =
   | "reference_hostname"
   | "manual_endpoint"
   | "disabled";
+export type ExposureIntentMode =
+  | "public_ok"
+  | "auth_required"
+  | "private_only"
+  | "temporary_public";
 
 export interface Connector {
   id: string;
@@ -113,6 +118,7 @@ export interface ScanConfig {
   intervalEnabled: boolean;
   intervalMinutes: number;
   retentionLimit: number;
+  driftIntervalDays: number;
   lastCompletedAt: string | null;
   nextScheduledAt: string | null;
 }
@@ -134,6 +140,16 @@ export interface SnapshotChange {
   routeSlug: string;
   routeLabel: string;
   description: string;
+}
+
+export interface ExposureIntent {
+  routeSlug: string;
+  routeLabel: string;
+  mode: ExposureIntentMode;
+  expectedTarget: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RoutevizSnapshot {
@@ -209,6 +225,7 @@ export interface PersistedSettings {
     intervalEnabled: boolean;
     intervalMinutes: number;
     retentionLimit: number;
+    driftIntervalDays: number;
   };
   webhookConfig: WebhookConfig;
   authOverrides: string[];
@@ -220,5 +237,6 @@ export interface RoutevizState {
   snapshots: RoutevizSnapshot[];
   history: SnapshotHistoryPoint[];
   settings: PersistedSettings;
+  exposureIntents: ExposureIntent[];
   recentChanges: SnapshotChange[];
 }

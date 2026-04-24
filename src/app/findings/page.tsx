@@ -1,13 +1,14 @@
 import Link from "next/link";
 
 import { ConsoleCard, ConsolePage } from "@/components/console-page";
+import { ExposureIntentActions } from "@/components/exposure-intent-actions";
 import { SuppressButton } from "@/components/suppress-button";
 import {
   compactFindingHeadline,
   compactFindingNextCheck,
   compactFindingTypeLabel,
 } from "@/lib/finding-copy";
-import type { Finding, WorkloadFinding } from "@/lib/routeviz-types";
+import type { ExposureIntentMode, Finding, WorkloadFinding } from "@/lib/routeviz-types";
 import { getRoutevizState, getSuppressedFindings, suppressionKey } from "@/lib/routeviz-server";
 import { getFindingsBySeverity, getSeverityCounts } from "@/lib/routeviz.mjs";
 import { buildServiceExplorerModel } from "@/lib/service-explorer";
@@ -22,6 +23,7 @@ type SearchParams = Promise<{
 type BucketKey =
   | "all"
   | "critical"
+  | "drift"
   | "medium"
   | "low"
   | "certificate_expired"
@@ -52,6 +54,12 @@ const findingBuckets: FindingBucket[] = [
     href: "/findings?bucket=critical",
     matches: (finding) => finding.severity === "high",
     workloadMatches: (finding) => finding.severity === "high",
+  },
+  {
+    key: "drift",
+    label: "DRIFT",
+    href: "/findings?bucket=drift",
+    matches: (finding) => finding.type === "intent_drift",
   },
   {
     key: "medium",
@@ -121,7 +129,7 @@ export default async function FindingsPage({
   const activeBucket =
     findingBuckets.find((bucket) => bucket.key === requestedBucket) ?? findingBuckets[0];
 
-  const [{ snapshot }, suppressedKeys] = await Promise.all([
+  const [{ snapshot, exposureIntents }, suppressedKeys] = await Promise.all([
     getRoutevizState(),
     getSuppressedFindings(),
   ]);
@@ -141,6 +149,9 @@ export default async function FindingsPage({
       service.id,
       { label: service.label, secondaryLabel: service.secondaryLabel },
     ]),
+  );
+  const exposureIntentModes = new Map(
+    exposureIntents.map((intent) => [intent.routeSlug, intent.mode]),
   );
 
   const bucketCounts = new Map(
@@ -262,7 +273,7 @@ export default async function FindingsPage({
                 <div className="font-mono text-[0.58rem] uppercase tracking-[0.3em] text-muted/50">
                   HEADLINE
                 </div>
-                <div className="font-mono text-[0.58rem] uppercase tracking-[0.3em] text-muted/50 text-right pr-2">
+                <div className="font-mono text-[0.58rem] uppercase tracking-[0.3em] text-muted/50">
                   ACTION
                 </div>
               </div>
@@ -278,6 +289,8 @@ export default async function FindingsPage({
                       href={`/routes?service=${finding.routeSlug}#service-detail`}
                       serviceLabel={meta?.label ?? finding.routeSlug}
                       secondaryLabel={meta?.secondaryLabel ?? finding.routeSlug}
+                      routeSlug={finding.routeSlug}
+                      activeIntentMode={exposureIntentModes.get(finding.routeSlug)}
                       suppressKey={suppressionKey(finding.type, finding.routeSlug)}
                     />
                   );
@@ -309,6 +322,8 @@ function FindingRow({
   href,
   serviceLabel,
   secondaryLabel,
+  routeSlug,
+  activeIntentMode,
   suppressKey,
 }: {
   type: string;
@@ -317,11 +332,13 @@ function FindingRow({
   href: string;
   serviceLabel: string;
   secondaryLabel: string;
+  routeSlug: string;
+  activeIntentMode?: ExposureIntentMode;
   suppressKey: string;
 }) {
   return (
     <article className="group px-4 py-3 hover:bg-panel-2/60 transition">
-      <div className="flex flex-col gap-2 md:grid md:grid-cols-[2fr_1fr_auto] md:items-start md:gap-x-4">
+      <div className="flex flex-col gap-2 md:grid md:grid-cols-[2fr_1fr_6rem] md:items-start md:gap-x-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span
@@ -347,14 +364,19 @@ function FindingRow({
             {compactFindingNextCheck(type)}
           </div>
         </div>
-        <div className="flex flex-col items-end gap-1.5">
+        <div className="flex flex-col gap-1.5 w-24">
           <Link
             href={href}
-            className="font-mono text-xs border border-accent/30 bg-accent/8 px-3 py-1.5 text-accent transition hover:bg-accent/18 hover:border-accent/55 whitespace-nowrap"
+            className="w-full text-center font-mono text-xs border border-accent/30 bg-accent/8 px-3 py-1.5 text-accent transition hover:bg-accent/18 hover:border-accent/55 whitespace-nowrap"
             style={{ textShadow: "0 0 6px rgba(57,255,122,0.3)" }}
           >
             open→
           </Link>
+          <ExposureIntentActions
+            routeSlug={routeSlug}
+            findingType={type}
+            activeMode={activeIntentMode}
+          />
           <SuppressButton suppressKey={suppressKey} />
         </div>
       </div>
@@ -379,7 +401,7 @@ function WorkloadFindingRow({
 }) {
   return (
     <article className="group px-4 py-3 hover:bg-panel-2/60 transition">
-      <div className="flex flex-col gap-2 md:grid md:grid-cols-[2fr_1fr_auto] md:items-start md:gap-x-4">
+      <div className="flex flex-col gap-2 md:grid md:grid-cols-[2fr_1fr_6rem] md:items-start md:gap-x-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span
@@ -407,8 +429,8 @@ function WorkloadFindingRow({
             {nextCheck}
           </div>
         </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <span className="font-mono text-xs border border-border/30 bg-panel-2 px-3 py-1.5 text-muted/40 whitespace-nowrap">
+        <div className="flex flex-col gap-1.5 w-24">
+          <span className="w-full text-center font-mono text-xs border border-border/30 bg-panel-2 px-3 py-1.5 text-muted/40 whitespace-nowrap">
             no route
           </span>
           <SuppressButton suppressKey={suppressKey} />

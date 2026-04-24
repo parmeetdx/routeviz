@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { Pool } from "pg";
 
-import type { RoutevizSnapshot, PersistedSettings } from "./routeviz-types";
+import type { ExposureIntent, ExposureIntentMode, RoutevizSnapshot, PersistedSettings } from "./routeviz-types";
 
 // ── Connection pool ────────────────────────────────────────────────────────────
 
@@ -33,6 +33,7 @@ const MIGRATION_FILES = [
   "003_npm_api_connector.sql",
   "004_interval_minutes_numeric.sql",
   "005_scan_request.sql",
+  "006_exposure_intents.sql",
 ];
 
 export async function runMigrations(): Promise<void> {
@@ -88,6 +89,7 @@ type SettingsRow = {
   scan_interval_enabled: boolean;
   scan_interval_minutes: number | string;
   scan_retention_limit: number;
+  drift_interval_days: number | null;
   webhook_enabled: boolean;
   webhook_url: string;
   webhook_severity_threshold: string;
@@ -113,6 +115,7 @@ export function rowToSettings(row: SettingsRow): PersistedSettings {
       intervalEnabled: row.scan_interval_enabled,
       intervalMinutes: Number(row.scan_interval_minutes),
       retentionLimit: row.scan_retention_limit,
+      driftIntervalDays: Number(row.drift_interval_days ?? 7),
     },
     webhookConfig: {
       enabled: row.webhook_enabled,
@@ -139,11 +142,11 @@ export async function dbUpsertSettings(settings: PersistedSettings): Promise<voi
       id, docker_socket_path, host_address, host_label,
       npm_connector_mode, npm_sqlite_path, npm_api_url, npm_api_token,
       dns_baseline_mode, dns_baseline_value,
-      scan_interval_enabled, scan_interval_minutes, scan_retention_limit,
+      scan_interval_enabled, scan_interval_minutes, scan_retention_limit, drift_interval_days,
       webhook_enabled, webhook_url, webhook_severity_threshold,
       webhook_last_delivery_at, webhook_last_delivery_status,
       auth_overrides, updated_at
-    ) values (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, now())
+    ) values (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, now())
     on conflict (id) do update set
       docker_socket_path = excluded.docker_socket_path,
       host_address = excluded.host_address,
@@ -157,6 +160,7 @@ export async function dbUpsertSettings(settings: PersistedSettings): Promise<voi
       scan_interval_enabled = excluded.scan_interval_enabled,
       scan_interval_minutes = excluded.scan_interval_minutes,
       scan_retention_limit = excluded.scan_retention_limit,
+      drift_interval_days = excluded.drift_interval_days,
       webhook_enabled = excluded.webhook_enabled,
       webhook_url = excluded.webhook_url,
       webhook_severity_threshold = excluded.webhook_severity_threshold,
@@ -177,6 +181,7 @@ export async function dbUpsertSettings(settings: PersistedSettings): Promise<voi
       settings.scanConfig.intervalEnabled,
       settings.scanConfig.intervalMinutes,
       settings.scanConfig.retentionLimit,
+      settings.scanConfig.driftIntervalDays,
       settings.webhookConfig.enabled,
       settings.webhookConfig.url,
       settings.webhookConfig.severityThreshold,
@@ -275,6 +280,73 @@ export async function dbSuppressFinding(key: string): Promise<void> {
 export async function dbUnsuppressFinding(key: string): Promise<void> {
   const pool = getPool();
   await pool.query("delete from suppressed_findings where key = $1", [key]);
+}
+
+// ── Exposure intents ──────────────────────────────────────────────────────────
+
+type ExposureIntentRow = {
+  route_slug: string;
+  route_label: string;
+  mode: ExposureIntentMode;
+  expected_target: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function rowToExposureIntent(row: ExposureIntentRow): ExposureIntent {
+  return {
+    routeSlug: row.route_slug,
+    routeLabel: row.route_label,
+    mode: row.mode,
+    expectedTarget: row.expected_target,
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function dbGetExposureIntents(): Promise<ExposureIntent[]> {
+  const pool = getPool();
+  const { rows } = await pool.query<ExposureIntentRow>(
+    `select route_slug, route_label, mode, expected_target, expires_at, created_at, updated_at
+     from exposure_intents
+     order by updated_at desc`,
+  );
+  return rows.map(rowToExposureIntent);
+}
+
+export async function dbUpsertExposureIntent(intent: {
+  routeSlug: string;
+  routeLabel: string;
+  mode: ExposureIntentMode;
+  expectedTarget: string | null;
+  expiresAt: string | null;
+}): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `insert into exposure_intents (
+      route_slug, route_label, mode, expected_target, expires_at, updated_at
+    ) values ($1, $2, $3, $4, $5, now())
+    on conflict (route_slug) do update set
+      route_label = excluded.route_label,
+      mode = excluded.mode,
+      expected_target = excluded.expected_target,
+      expires_at = excluded.expires_at,
+      updated_at = now()`,
+    [
+      intent.routeSlug,
+      intent.routeLabel,
+      intent.mode,
+      intent.expectedTarget,
+      intent.expiresAt,
+    ],
+  );
+}
+
+export async function dbDeleteExposureIntent(routeSlug: string): Promise<void> {
+  const pool = getPool();
+  await pool.query("delete from exposure_intents where route_slug = $1", [routeSlug]);
 }
 
 // ── Users ──────────────────────────────────────────────────────────────────────

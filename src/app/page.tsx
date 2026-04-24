@@ -59,7 +59,16 @@ export default async function Home() {
     })
     .sort((left, right) => compareFindings(left.sortFinding, right.sortFinding))
     .slice(0, 5)
-    .map(({ sortFinding: _sortFinding, ...item }) => item);
+    .map((item) => ({
+      id: item.id,
+      serviceLabel: item.serviceLabel,
+      secondaryLabel: item.secondaryLabel,
+      findingType: item.findingType,
+      severity: item.severity,
+      evidence: item.evidence,
+      nextCheck: item.nextCheck,
+      href: item.href,
+    }));
 
   return (
     <ConsolePage
@@ -124,20 +133,22 @@ function severityRank(value: Finding["severity"]) {
 
 function typeRank(value: string) {
   switch (value) {
-    case "unmatched_target":
+    case "intent_drift":
       return 0;
-    case "certificate_expired":
+    case "unmatched_target":
       return 1;
-    case "docker_socket_write_mount":
+    case "certificate_expired":
       return 2;
-    case "management_surface":
+    case "docker_socket_write_mount":
       return 3;
-    case "off_host_target":
+    case "management_surface":
       return 4;
-    case "ambiguous_target":
+    case "off_host_target":
       return 5;
-    case "shared_forward_target":
+    case "ambiguous_target":
       return 6;
+    case "shared_forward_target":
+      return 7;
     default:
       return 10;
   }
