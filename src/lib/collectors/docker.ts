@@ -174,12 +174,29 @@ function parseImageRef(image: string): { namespace: string; name: string } | nul
   return { namespace: parts[parts.length - 2], name: parts[parts.length - 1] };
 }
 
+// Returns true for tags that look like real release versions:
+// 1.2.3, v1.2.3, 1.2, 1.2.3-alpine, 1.2.3-debian — but NOT:
+// sha-abc123, renovate-*, windowsservercore-*, latest, edge, stable, nightly
+function isVersionTag(tag: string): boolean {
+  // Must start with a digit or "v" followed by a digit
+  if (!/^v?\d/.test(tag)) return false;
+  // Must contain at least one dot (e.g. 1.2 or 1.2.3)
+  if (!tag.includes(".")) return false;
+  // Reject platform/OS suffix tags
+  if (/windows|ltsc|nanoserver|servercore/i.test(tag)) return false;
+  // Reject SHA-based tags
+  if (/^(sha-|[0-9a-f]{7,40}$)/i.test(tag)) return false;
+  return true;
+}
+
 async function fetchLatestImageTag(image: string): Promise<string | null> {
   const ref = parseImageRef(image);
   if (!ref) return null;
 
+  // Fetch more tags sorted by last_updated so we get a broad sample,
+  // then pick the best semantic version from them.
   return new Promise((resolve) => {
-    const path = `/v2/repositories/${ref.namespace}/${ref.name}/tags?page_size=10&ordering=last_updated`;
+    const path = `/v2/repositories/${ref.namespace}/${ref.name}/tags?page_size=50&ordering=last_updated`;
     const req = https.request(
       { hostname: "hub.docker.com", path, method: "GET", headers: { "User-Agent": "routeviz-probe/1.0" } },
       (res) => {
@@ -188,8 +205,24 @@ async function fetchLatestImageTag(image: string): Promise<string | null> {
         res.on("end", () => {
           try {
             const data = JSON.parse(body) as { results?: Array<{ name: string }> };
-            const versioned = (data.results ?? []).find((t) => t.name !== "latest" && /\d/.test(t.name));
-            resolve(versioned?.name ?? null);
+            const candidates = (data.results ?? [])
+              .map((t) => t.name)
+              .filter(isVersionTag);
+
+            if (candidates.length === 0) { resolve(null); return; }
+
+            // Sort descending by semver-like numeric comparison
+            candidates.sort((a, b) => {
+              const toNums = (s: string) =>
+                s.replace(/^v/, "").split(/[.\-]/)[0] === s.replace(/^v/, "").split(/[.\-]/)[0]
+                  ? s.replace(/^v/, "").split(/[.\-]/).slice(0, 3).map((n) => parseInt(n) || 0)
+                  : [0, 0, 0];
+              const [a1 = 0, a2 = 0, a3 = 0] = toNums(a);
+              const [b1 = 0, b2 = 0, b3 = 0] = toNums(b);
+              return b1 - a1 || b2 - a2 || b3 - a3;
+            });
+
+            resolve(candidates[0] ?? null);
           } catch {
             resolve(null);
           }
