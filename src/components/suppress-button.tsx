@@ -22,7 +22,7 @@ export function SuppressButton({ suppressKey }: { suppressKey: string }) {
     <button
       onClick={handleSuppress}
       disabled={loading}
-      className="w-full font-mono text-[0.6rem] uppercase tracking-wider border border-muted/20 bg-panel-2 px-2 py-1.5 text-muted/50 transition hover:border-muted/40 hover:text-muted/80 disabled:opacity-40 whitespace-nowrap"
+      className="w-full font-mono text-[0.6rem] uppercase tracking-wider border border-muted/35 bg-panel-2 px-2 py-1.5 text-muted/70 transition hover:border-muted/55 hover:text-muted/90 disabled:opacity-40 whitespace-nowrap"
       title="Suppress this finding — it won't appear in future snapshots until unsuppressed"
     >
       {loading ? "…" : "suppress"}
