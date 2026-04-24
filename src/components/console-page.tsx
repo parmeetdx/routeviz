@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { LogoutButton } from "./logout-button";
+
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
@@ -11,6 +13,7 @@ export function ConsolePage({
   eyebrow,
   lastSyncLabel,
   actions,
+  titleSlot,
   compactIntro = false,
   hideIntro = false,
   children,
@@ -20,6 +23,7 @@ export function ConsolePage({
   eyebrow: string;
   lastSyncLabel?: string | null;
   actions?: ReactNode;
+  titleSlot?: ReactNode;
   compactIntro?: boolean;
   hideIntro?: boolean;
   children: ReactNode;
@@ -65,7 +69,7 @@ export function ConsolePage({
             </nav>
           </div>
 
-          {/* Right side: actions + sync time */}
+          {/* Right side: actions + sync time + logout */}
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted sm:justify-end">
             {actions}
             {lastSyncLabel ? (
@@ -73,6 +77,7 @@ export function ConsolePage({
                 <span className="text-accent/50 mr-1">✓</span>sync {lastSyncLabel}
               </span>
             ) : null}
+            <LogoutButton />
           </div>
         </div>
       </header>
@@ -87,6 +92,7 @@ export function ConsolePage({
               style={{ textShadow: "0 0 20px rgba(57,255,122,0.15)" }}>
               {title}
             </h1>
+            {titleSlot}
             <p className="mt-1.5 max-w-2xl font-mono text-xs leading-6 text-muted">{description}</p>
           </section>
         ) : (
