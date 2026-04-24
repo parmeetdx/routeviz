@@ -33,10 +33,13 @@ export interface Finding {
   nextCheck: string;
 }
 
+export type ImageUpdateStatus = "outdated" | "unknown" | "up_to_date" | "no_data";
+
 export interface RelatedWorkload {
   name: string;
   image: string;
   latestImageTag: string | null;
+  imageUpdateStatus: ImageUpdateStatus;
   state: string;
   role: string;
   createdAt: string | null;
