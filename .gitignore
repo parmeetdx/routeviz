@@ -24,7 +24,12 @@
 .DS_Store
 ._*
 .ops-ledger/
+.routeviz/
+.netcanary/
 *.pem
+
+# local dev logs
+.logs/
 
 # debug
 npm-debug.log*

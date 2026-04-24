@@ -21,7 +21,7 @@ export async function createSession(userId: string): Promise<void> {
     sameSite: "lax",
     path: "/",
     expires: expiresAt,
-    secure: process.env.NODE_ENV === "production",
+    secure: false, // HTTP-only self-hosted install, never served over HTTPS directly
   });
 }
 
