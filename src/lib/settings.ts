@@ -20,6 +20,7 @@ export type SettingsUpdate = {
 
 export const DEFAULT_INTERVAL_MINUTES = 5;
 export const DEFAULT_RETENTION_LIMIT = 576;
+export const DEFAULT_DRIFT_INTERVAL_DAYS = 7;
 
 export function detectHostAddress(): string | null {
   // Allow explicit override via environment — necessary when running inside a
@@ -49,6 +50,7 @@ export const defaultSettings: PersistedSettings = {
     intervalEnabled: true,
     intervalMinutes: DEFAULT_INTERVAL_MINUTES,
     retentionLimit: DEFAULT_RETENTION_LIMIT,
+    driftIntervalDays: DEFAULT_DRIFT_INTERVAL_DAYS,
   },
   webhookConfig: {
     enabled: false,
@@ -73,6 +75,7 @@ export function normalizeSettings(input: Partial<PersistedSettings> = {}): Persi
   const dnsBaselineValue = input.dnsBaseline?.value ?? defaultSettings.dnsBaseline.value;
   const intervalMinutes = input.scanConfig?.intervalMinutes;
   const retentionLimit = input.scanConfig?.retentionLimit;
+  const driftIntervalDays = input.scanConfig?.driftIntervalDays;
 
   return {
     dockerSocketPath: input.dockerSocketPath ?? defaultSettings.dockerSocketPath,
@@ -96,6 +99,10 @@ export function normalizeSettings(input: Partial<PersistedSettings> = {}): Persi
         typeof retentionLimit === "number" && retentionLimit > 0
           ? retentionLimit
           : defaultSettings.scanConfig.retentionLimit,
+      driftIntervalDays:
+        typeof driftIntervalDays === "number" && driftIntervalDays > 0
+          ? driftIntervalDays
+          : defaultSettings.scanConfig.driftIntervalDays,
     },
     webhookConfig: {
       enabled: input.webhookConfig?.enabled ?? false,
@@ -137,6 +144,7 @@ export function attachCurrentSettings(snapshot: RoutevizSnapshot, settings: Pers
       intervalEnabled: settings.scanConfig.intervalEnabled,
       intervalMinutes: settings.scanConfig.intervalMinutes,
       retentionLimit: settings.scanConfig.retentionLimit,
+      driftIntervalDays: settings.scanConfig.driftIntervalDays,
       lastCompletedAt: snapshot.generatedAt,
       nextScheduledAt: getNextScheduledAt(
         snapshot.generatedAt,
