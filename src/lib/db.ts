@@ -3,24 +3,24 @@ import path from "node:path";
 
 import { Pool } from "pg";
 
-import type { OpsLedgerSnapshot, PersistedSettings } from "./ops-ledger-types";
+import type { RoutevizSnapshot, PersistedSettings } from "./routeviz-types";
 
 // ── Connection pool ────────────────────────────────────────────────────────────
 
-const globalDb = globalThis as typeof globalThis & { __opsLedgerPool?: Pool };
+const globalDb = globalThis as typeof globalThis & { __routevizPool?: Pool };
 
 export function getPool(): Pool {
-  if (!globalDb.__opsLedgerPool) {
+  if (!globalDb.__routevizPool) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
       throw new Error(
         "DATABASE_URL environment variable is not set. " +
-        "Add it to your .env file: DATABASE_URL=postgresql://user:password@localhost:5432/netcanary",
+        "Add it to your .env file: DATABASE_URL=postgresql://user:password@localhost:5432/routeviz",
       );
     }
-    globalDb.__opsLedgerPool = new Pool({ connectionString });
+    globalDb.__routevizPool = new Pool({ connectionString });
   }
-  return globalDb.__opsLedgerPool;
+  return globalDb.__routevizPool;
 }
 
 // ── Migration runner ───────────────────────────────────────────────────────────
@@ -30,6 +30,9 @@ const MIGRATIONS_DIR = path.join(process.cwd(), "migrations");
 const MIGRATION_FILES = [
   "001_initial.sql",
   "002_users.sql",
+  "003_npm_api_connector.sql",
+  "004_interval_minutes_numeric.sql",
+  "005_scan_request.sql",
 ];
 
 export async function runMigrations(): Promise<void> {
@@ -76,11 +79,14 @@ type SettingsRow = {
   docker_socket_path: string;
   host_address: string | null;
   host_label: string;
+  npm_connector_mode: string;
   npm_sqlite_path: string;
+  npm_api_url: string;
+  npm_api_token: string;
   dns_baseline_mode: string;
   dns_baseline_value: string;
   scan_interval_enabled: boolean;
-  scan_interval_minutes: number;
+  scan_interval_minutes: number | string;
   scan_retention_limit: number;
   webhook_enabled: boolean;
   webhook_url: string;
@@ -95,14 +101,17 @@ export function rowToSettings(row: SettingsRow): PersistedSettings {
     dockerSocketPath: row.docker_socket_path,
     hostAddress: row.host_address,
     hostLabel: row.host_label,
+    npmConnectorMode: row.npm_connector_mode === "api" ? "api" : "sqlite",
     npmSqlitePath: row.npm_sqlite_path,
+    npmApiUrl: row.npm_api_url ?? "",
+    npmApiToken: row.npm_api_token ?? "",
     dnsBaseline: {
       mode: row.dns_baseline_mode as PersistedSettings["dnsBaseline"]["mode"],
       value: row.dns_baseline_value,
     },
     scanConfig: {
       intervalEnabled: row.scan_interval_enabled,
-      intervalMinutes: row.scan_interval_minutes,
+      intervalMinutes: Number(row.scan_interval_minutes),
       retentionLimit: row.scan_retention_limit,
     },
     webhookConfig: {
@@ -127,18 +136,22 @@ export async function dbUpsertSettings(settings: PersistedSettings): Promise<voi
   const pool = getPool();
   await pool.query(
     `insert into settings (
-      id, docker_socket_path, host_address, host_label, npm_sqlite_path,
+      id, docker_socket_path, host_address, host_label,
+      npm_connector_mode, npm_sqlite_path, npm_api_url, npm_api_token,
       dns_baseline_mode, dns_baseline_value,
       scan_interval_enabled, scan_interval_minutes, scan_retention_limit,
       webhook_enabled, webhook_url, webhook_severity_threshold,
       webhook_last_delivery_at, webhook_last_delivery_status,
       auth_overrides, updated_at
-    ) values (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
+    ) values (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, now())
     on conflict (id) do update set
       docker_socket_path = excluded.docker_socket_path,
       host_address = excluded.host_address,
       host_label = excluded.host_label,
+      npm_connector_mode = excluded.npm_connector_mode,
       npm_sqlite_path = excluded.npm_sqlite_path,
+      npm_api_url = excluded.npm_api_url,
+      npm_api_token = excluded.npm_api_token,
       dns_baseline_mode = excluded.dns_baseline_mode,
       dns_baseline_value = excluded.dns_baseline_value,
       scan_interval_enabled = excluded.scan_interval_enabled,
@@ -155,7 +168,10 @@ export async function dbUpsertSettings(settings: PersistedSettings): Promise<voi
       settings.dockerSocketPath,
       settings.hostAddress,
       settings.hostLabel,
+      settings.npmConnectorMode,
       settings.npmSqlitePath,
+      settings.npmApiUrl,
+      settings.npmApiToken,
       settings.dnsBaseline.mode,
       settings.dnsBaseline.value,
       settings.scanConfig.intervalEnabled,
@@ -173,7 +189,7 @@ export async function dbUpsertSettings(settings: PersistedSettings): Promise<voi
 
 // ── Snapshots ──────────────────────────────────────────────────────────────────
 
-export async function dbInsertSnapshot(snapshot: OpsLedgerSnapshot): Promise<void> {
+export async function dbInsertSnapshot(snapshot: RoutevizSnapshot): Promise<void> {
   const pool = getPool();
   await pool.query(
     `insert into snapshots (id, generated_at, host_label, host_address, payload)
@@ -189,26 +205,26 @@ export async function dbInsertSnapshot(snapshot: OpsLedgerSnapshot): Promise<voi
   );
 }
 
-export async function dbGetSnapshots(limit: number): Promise<OpsLedgerSnapshot[]> {
+export async function dbGetSnapshots(limit: number): Promise<RoutevizSnapshot[]> {
   const pool = getPool();
-  const { rows } = await pool.query<{ payload: OpsLedgerSnapshot }>(
+  const { rows } = await pool.query<{ payload: RoutevizSnapshot }>(
     "select payload from snapshots order by generated_at asc limit $1",
     [limit],
   );
   return rows.map((r) => r.payload);
 }
 
-export async function dbGetLatestSnapshot(): Promise<OpsLedgerSnapshot | null> {
+export async function dbGetLatestSnapshot(): Promise<RoutevizSnapshot | null> {
   const pool = getPool();
-  const { rows } = await pool.query<{ payload: OpsLedgerSnapshot }>(
+  const { rows } = await pool.query<{ payload: RoutevizSnapshot }>(
     "select payload from snapshots order by generated_at desc limit 1",
   );
   return rows[0]?.payload ?? null;
 }
 
-export async function dbGetActiveSnapshot(): Promise<OpsLedgerSnapshot | null> {
+export async function dbGetActiveSnapshot(): Promise<RoutevizSnapshot | null> {
   const pool = getPool();
-  const { rows } = await pool.query<{ payload: OpsLedgerSnapshot }>(
+  const { rows } = await pool.query<{ payload: RoutevizSnapshot }>(
     `select s.payload from active_snapshot a
      join snapshots s on s.id = a.snapshot_id
      where a.id = 1`,
@@ -237,11 +253,6 @@ export async function dbPruneSnapshots(retentionLimit: number): Promise<void> {
   );
 }
 
-export async function dbGetSnapshotCount(): Promise<number> {
-  const pool = getPool();
-  const { rows } = await pool.query<{ count: string }>("select count(*) from snapshots");
-  return parseInt(rows[0]?.count ?? "0", 10);
-}
 
 // ── Suppressed findings ────────────────────────────────────────────────────────
 
@@ -354,4 +365,19 @@ export async function dbDeleteSession(token: string): Promise<void> {
 export async function dbDeleteExpiredSessions(): Promise<void> {
   const pool = getPool();
   await pool.query("delete from sessions where expires_at < now()");
+}
+
+// ── Scan request (web → worker signal) ────────────────────────────────────────
+
+export async function dbRequestScan(): Promise<void> {
+  const pool = getPool();
+  await pool.query("update settings set scan_requested = true");
+}
+
+export async function dbCheckAndClearScanRequest(): Promise<boolean> {
+  const pool = getPool();
+  const { rows } = await pool.query<{ scan_requested: boolean }>(
+    "update settings set scan_requested = false where scan_requested = true returning scan_requested",
+  );
+  return rows.length > 0;
 }

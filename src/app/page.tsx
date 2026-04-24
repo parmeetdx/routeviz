@@ -1,14 +1,14 @@
 import { ConsolePage } from "@/components/console-page";
 import { OverviewStatusBoard } from "@/components/overview-status-board";
 import { compactFindingNextCheck } from "@/lib/finding-copy";
-import { getOpsLedgerState } from "@/lib/ops-ledger-server";
+import { getRoutevizState } from "@/lib/routeviz-server";
 import { buildServiceExplorerModel } from "@/lib/service-explorer";
-import type { Finding, RouteRecord } from "@/lib/ops-ledger-types";
+import type { Finding, RouteRecord } from "@/lib/routeviz-types";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const { snapshot, recentChanges } = await getOpsLedgerState();
+  const { snapshot, recentChanges } = await getRoutevizState();
   const model = buildServiceExplorerModel(snapshot, null);
   const findings = snapshot.findings;
   const trackedRouteCount = model.services.length;

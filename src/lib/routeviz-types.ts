@@ -133,7 +133,7 @@ export interface SnapshotChange {
   description: string;
 }
 
-export interface OpsLedgerSnapshot {
+export interface RoutevizSnapshot {
   id: string;
   generatedAt: string;
   generatedLabel: string;
@@ -194,7 +194,10 @@ export interface PersistedSettings {
   dockerSocketPath: string;
   hostAddress: string | null;
   hostLabel: string;
+  npmConnectorMode: "sqlite" | "api";
   npmSqlitePath: string;
+  npmApiUrl: string;
+  npmApiToken: string;
   dnsBaseline: {
     mode: DnsBaselineMode;
     value: string;
@@ -209,9 +212,9 @@ export interface PersistedSettings {
   suppressedFindings: string[];
 }
 
-export interface OpsLedgerState {
-  snapshot: OpsLedgerSnapshot;
-  snapshots: OpsLedgerSnapshot[];
+export interface RoutevizState {
+  snapshot: RoutevizSnapshot;
+  snapshots: RoutevizSnapshot[];
   history: SnapshotHistoryPoint[];
   settings: PersistedSettings;
   recentChanges: SnapshotChange[];

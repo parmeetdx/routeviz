@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { SESSION_COOKIE } from "@/lib/auth";
+const SESSION_COOKIE = "ops_session";
 
 // Routes that never require authentication
 const UNPROTECTED_PATHS = ["/auth/login", "/auth/register", "/api/auth/"];

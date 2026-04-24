@@ -1,6 +1,6 @@
-# Ops Ledger
+# Routeviz
 
-Ops Ledger is a local-first dashboard for self-hosted service inventory, routing visibility, and exposure-chain mapping.
+Routeviz is a local-first dashboard for self-hosted service inventory, routing visibility, and exposure-chain mapping.
 
 The current product direction is intentionally narrow:
 

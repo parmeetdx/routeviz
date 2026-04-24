@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { createSession } from "@/lib/auth";
 import { dbGetUserByIdentifier } from "@/lib/db";
-import { ensureDb } from "@/lib/ops-ledger-server";
+import { ensureDb } from "@/lib/routeviz-server";
 
 export async function POST(req: Request) {
   try {

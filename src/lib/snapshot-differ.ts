@@ -1,9 +1,9 @@
 import type {
   ChangeKind,
   FindingSeverity,
-  OpsLedgerSnapshot,
+  RoutevizSnapshot,
   SnapshotChange,
-} from "./ops-ledger-types";
+} from "./routeviz-types";
 
 function change(
   kind: ChangeKind,
@@ -16,8 +16,8 @@ function change(
 }
 
 export function diffSnapshots(
-  prev: OpsLedgerSnapshot,
-  curr: OpsLedgerSnapshot,
+  prev: RoutevizSnapshot,
+  curr: RoutevizSnapshot,
 ): SnapshotChange[] {
   const changes: SnapshotChange[] = [];
 

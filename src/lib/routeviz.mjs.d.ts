@@ -3,14 +3,14 @@ import type {
   ConnectorSummary,
   DnsBaseline,
   Finding,
-  OpsLedgerSnapshot,
+  RoutevizSnapshot,
   OverviewStats,
   PersistedSettings,
   RouteDetail,
   RouteWithFindings,
   ScanConfig,
   SnapshotHistoryPoint,
-} from "./ops-ledger-types";
+} from "./routeviz-types";
 
 export function formatTimestampLabel(iso: string): string;
 export function getDnsBaselineHelper(dnsBaseline: {
@@ -20,22 +20,22 @@ export function getDnsBaselineHelper(dnsBaseline: {
 export function createFallbackSnapshot(
   settings: PersistedSettings,
   message?: string,
-): OpsLedgerSnapshot;
-export function getOverviewStats(snapshot: OpsLedgerSnapshot): OverviewStats;
+): RoutevizSnapshot;
+export function getOverviewStats(snapshot: RoutevizSnapshot): OverviewStats;
 export function getRouteDetailBySlug(
-  snapshot: OpsLedgerSnapshot,
+  snapshot: RoutevizSnapshot,
   slug: string,
 ): RouteDetail | null;
 export function getConnectorSummary(items: Connector[]): ConnectorSummary;
 export function getScanSummary(scanConfig: ScanConfig): string;
 export function getRoutesWithFindings(
-  snapshot: OpsLedgerSnapshot,
+  snapshot: RoutevizSnapshot,
 ): RouteWithFindings[];
-export function getFindingsBySeverity(snapshot: OpsLedgerSnapshot): Finding[];
+export function getFindingsBySeverity(snapshot: RoutevizSnapshot): Finding[];
 export function getSeverityCounts(
   findings: Finding[],
 ): { high: number; medium: number; low: number };
 export function getHistoryPoints(
-  snapshots: OpsLedgerSnapshot[],
+  snapshots: RoutevizSnapshot[],
 ): SnapshotHistoryPoint[];
 export function slugify(value: string): string;

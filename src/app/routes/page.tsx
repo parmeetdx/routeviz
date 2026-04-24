@@ -1,5 +1,5 @@
 import ServiceExplorer from "@/components/service-explorer";
-import { getOpsLedgerState } from "@/lib/ops-ledger-server";
+import { getRoutevizState } from "@/lib/routeviz-server";
 import { buildServiceExplorerModel } from "@/lib/service-explorer";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ export default async function RoutesPage({
   searchParams: Promise<{ service?: string }>;
 }) {
   const [{ snapshot, snapshots }, params] = await Promise.all([
-    getOpsLedgerState(),
+    getRoutevizState(),
     searchParams,
   ]);
   const model = buildServiceExplorerModel(snapshot, params.service ?? null, snapshots);

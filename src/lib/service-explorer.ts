@@ -1,11 +1,11 @@
-import { slugify } from "@/lib/ops-ledger.mjs";
+import { slugify } from "@/lib/routeviz.mjs";
 import type {
   Finding,
-  OpsLedgerSnapshot,
+  RoutevizSnapshot,
   RelatedWorkload,
   RouteRecord,
   WorkloadRecord,
-} from "@/lib/ops-ledger-types";
+} from "@/lib/routeviz-types";
 
 type ServiceKind = "public" | "internal";
 type ServiceStatus = "online" | "warning" | "offline";
@@ -107,9 +107,9 @@ const SPECIAL_LABELS = new Map<string, string>([
 ]);
 
 export function buildServiceExplorerModel(
-  snapshot: OpsLedgerSnapshot,
+  snapshot: RoutevizSnapshot,
   selectedId: string | null,
-  snapshots?: OpsLedgerSnapshot[],
+  snapshots?: RoutevizSnapshot[],
 ): ServiceExplorerModel {
   const findingsByRoute = new Map<string, Finding[]>();
 
@@ -161,7 +161,7 @@ export function buildServiceExplorerModel(
 }
 
 function buildPublicService(
-  snapshot: OpsLedgerSnapshot,
+  snapshot: RoutevizSnapshot,
   route: RouteRecord,
   findings: Finding[],
   availabilitySparkline: SparklinePoint[] = [],
@@ -371,7 +371,7 @@ function buildPublicService(
   };
 }
 
-function buildInternalServices(snapshot: OpsLedgerSnapshot) {
+function buildInternalServices(snapshot: RoutevizSnapshot) {
   const publicKeys = new Set<string>();
 
   for (const route of snapshot.routes) {
@@ -408,7 +408,7 @@ function buildInternalServices(snapshot: OpsLedgerSnapshot) {
 }
 
 function buildInternalService(
-  snapshot: OpsLedgerSnapshot,
+  snapshot: RoutevizSnapshot,
   workloads: WorkloadRecord[],
 ): ExplorerService {
   const label = getInternalLabel(workloads);
@@ -489,7 +489,7 @@ function buildInternalService(
     impactItems: [],
     notes: compactNotes([
       `No public DNS or reverse-proxy hop is associated with ${label} in the current snapshot.`,
-      `Netcanary is showing this service because it publishes ${endpoint}.`,
+      `Routeviz is showing this service because it publishes ${endpoint}.`,
       composePath ? `Primary compose path: ${composePath}` : null,
     ]),
     findings: [],

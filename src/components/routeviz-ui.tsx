@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import type { RelatedWorkload, SnapshotHistoryPoint } from "@/lib/ops-ledger-types";
+import type { RelatedWorkload, SnapshotHistoryPoint } from "@/lib/routeviz-types";
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");

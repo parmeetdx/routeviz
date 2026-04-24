@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import type { Connector, PersistedSettings } from "@/lib/ops-ledger-types";
+import type { Connector, PersistedSettings } from "@/lib/routeviz-types";
 
-import { Badge } from "./ops-ledger-ui";
+import { Badge } from "./routeviz-ui";
 
 type BaselineMode = PersistedSettings["dnsBaseline"]["mode"];
 
@@ -62,6 +62,16 @@ export default function SetupConsole({
   connectors: Connector[];
 }) {
   const router = useRouter();
+  const [npmConnectorMode, setNpmConnectorMode] = useState<"sqlite" | "api">(
+    settings.npmConnectorMode ?? "sqlite",
+  );
+  const [npmSqlitePath, setNpmSqlitePath] = useState(settings.npmSqlitePath);
+  const [npmApiUrl, setNpmApiUrl] = useState(settings.npmApiUrl ?? "");
+  const [npmApiToken, setNpmApiToken] = useState(settings.npmApiToken ?? "");
+  const [npmApiEmail, setNpmApiEmail] = useState("");
+  const [npmApiPassword, setNpmApiPassword] = useState("");
+  const [npmConnectStatus, setNpmConnectStatus] = useState<"idle" | "connecting" | "ok" | "error">("idle");
+  const [npmConnectError, setNpmConnectError] = useState("");
   const [baselineMode, setBaselineMode] = useState<BaselineMode>(
     settings.dnsBaseline.mode,
   );
@@ -88,17 +98,9 @@ export default function SetupConsole({
   );
   const [errorMessage, setErrorMessage] = useState("");
 
-  const requiredConnectors = useMemo(
-    () => connectors.filter((connector) => connector.requiresAction),
-    [connectors],
-  );
-
   const readiness = useMemo(() => {
-    const hasBaseline =
-      baselineMode === "disabled" || baselineValue.trim().length > 0;
-
-    return hasBaseline && requiredConnectors.length === 0;
-  }, [baselineMode, baselineValue, requiredConnectors.length]);
+    return baselineMode === "disabled" || baselineValue.trim().length > 0;
+  }, [baselineMode, baselineValue]);
 
   const baselineOptions: Array<{
     value: BaselineMode;
@@ -113,7 +115,7 @@ export default function SetupConsole({
       label: "Off",
       description: "No DNS mismatch alerts",
       helper:
-        "Netcanary records DNS answers, but it does not compare them against an expected endpoint.",
+        "Routeviz records DNS answers, but it does not compare them against an expected endpoint.",
       example: "Best for most installs when you only want exposure findings.",
       recommended: true,
     },
@@ -172,7 +174,7 @@ export default function SetupConsole({
 
   const baselineText =
     baselineMode === "disabled"
-      ? "DNS mismatch checks are off. Netcanary still records answers it sees."
+      ? "DNS mismatch checks are off. Routeviz still records answers it sees."
       : baselineMode === "reference_hostname"
         ? `Comparing public routes against ${baselineValue || "your trusted hostname"}.`
         : `Comparing public routes against ${baselineValue || "your explicit endpoint"}.`;
@@ -183,6 +185,40 @@ export default function SetupConsole({
       : "Trusted reference hostname";
   const baselinePlaceholder =
     baselineMode === "manual_endpoint" ? "203.0.113.10" : "edge.example.com";
+
+  async function handleNpmConnect() {
+    setNpmConnectStatus("connecting");
+    setNpmConnectError("");
+    try {
+      const res = await fetch("/api/npm-connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: npmApiUrl.trim(), email: npmApiEmail.trim(), password: npmApiPassword }),
+      });
+      const data = await res.json() as { token?: string; error?: string };
+      if (!res.ok || !data.token) {
+        setNpmConnectStatus("error");
+        setNpmConnectError(data.error ?? "Could not connect to NPM.");
+        return;
+      }
+      const token = data.token;
+      setNpmApiToken(token);
+      setNpmConnectStatus("ok");
+      setNpmApiEmail("");
+      setNpmApiPassword("");
+      // Auto-save and trigger scan
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ npmConnectorMode: "api", npmApiUrl: npmApiUrl.trim(), npmApiToken: token }),
+      });
+      fetch("/api/scan", { method: "POST" }).catch(() => null);
+      router.refresh();
+    } catch {
+      setNpmConnectStatus("error");
+      setNpmConnectError("Network error — check the NPM URL.");
+    }
+  }
 
   async function handleSave() {
     setStatus("saving");
@@ -195,6 +231,10 @@ export default function SetupConsole({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          npmConnectorMode,
+          npmSqlitePath: npmSqlitePath.trim(),
+          npmApiUrl: npmApiUrl.trim(),
+          npmApiToken: npmApiToken.trim(),
           dnsBaseline: {
             mode: baselineMode,
             value: baselineValue.trim(),
@@ -295,6 +335,137 @@ export default function SetupConsole({
             <section className="grid gap-5 px-4 py-5 sm:px-5 lg:grid-cols-[210px_minmax(0,1fr)]">
               <div>
                 <p className="font-mono text-[0.62rem] uppercase tracking-[0.22em] text-muted/70">
+                  NPM_CONNECTOR
+                </p>
+                <h3 className="mt-2 font-mono text-sm font-bold text-foreground">
+                  Proxy source
+                </h3>
+                <p className="mt-2 font-mono text-xs leading-6 text-muted/80">
+                  SQLite requires the NPM data directory bind-mounted into the container. Use API mode if NPM runs on a different host.
+                </p>
+              </div>
+
+              <div className="min-w-0 space-y-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(["sqlite", "api"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setNpmConnectorMode(mode)}
+                      className={`min-w-0 border px-4 py-3 text-left transition ${
+                        npmConnectorMode === mode
+                          ? "border-accent/45 bg-panel-2 shadow-[inset_3px_0_0_0_var(--color-accent)]"
+                          : "border-border/50 bg-panel hover:border-accent/25"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-mono text-xs font-bold text-foreground">
+                          {mode === "sqlite" ? "SQLite (local)" : "API (remote)"}
+                        </span>
+                        {mode === "sqlite" ? (
+                          <span className="font-mono text-[0.58rem] uppercase tracking-wider border border-success/30 bg-success/10 px-1.5 py-0.5 text-success">
+                            default
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-1.5 font-mono text-[0.62rem] leading-5 text-muted/70">
+                        {mode === "sqlite" ? "Read directly from the bind-mounted SQLite file" : "Fetch routes via the NPM REST API"}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {npmConnectorMode === "sqlite" ? (
+                  <div className="border border-border/50 bg-panel-2 px-4 py-4 space-y-3">
+                    <label className="grid gap-2">
+                      <span className="font-mono text-xs font-bold text-foreground">
+                        SQLite path
+                      </span>
+                      <input
+                        className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
+                        value={npmSqlitePath}
+                        onChange={(e) => setNpmSqlitePath(e.target.value)}
+                        placeholder="/npm-data/database.sqlite"
+                      />
+                    </label>
+                    <p className="font-mono text-[0.62rem] leading-5 text-muted/60">
+                      Mount the NPM data directory as <code className="text-foreground/70">/npm-data:ro</code> in docker-compose.yml.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="border border-border/50 bg-panel-2 px-4 py-4 space-y-3">
+                    <label className="grid gap-2">
+                      <span className="font-mono text-xs font-bold text-foreground">NPM base URL</span>
+                      <input
+                        className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
+                        value={npmApiUrl}
+                        onChange={(e) => { setNpmApiUrl(e.target.value); setNpmConnectStatus("idle"); }}
+                        placeholder="http://192.168.1.10:81"
+                      />
+                    </label>
+
+                    {npmConnectStatus === "ok" || (npmApiToken && npmConnectStatus === "idle") ? (
+                      <div className="flex items-center justify-between border border-success/20 bg-success/5 px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-success">✓ connected</span>
+                          <span className="font-mono text-[0.62rem] text-muted/50">Token active</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setNpmConnectStatus("idle"); setNpmApiToken(""); setNpmApiEmail(""); setNpmApiPassword(""); }}
+                          className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/50 hover:text-accent transition border border-border/40 px-2 py-1"
+                        >
+                          refresh token
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <label className="grid gap-2">
+                          <span className="font-mono text-xs font-bold text-foreground">NPM email</span>
+                          <input
+                            type="email"
+                            className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
+                            value={npmApiEmail}
+                            onChange={(e) => setNpmApiEmail(e.target.value)}
+                            placeholder="admin@example.com"
+                          />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="font-mono text-xs font-bold text-foreground">NPM password</span>
+                          <input
+                            type="password"
+                            className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
+                            value={npmApiPassword}
+                            onChange={(e) => setNpmApiPassword(e.target.value)}
+                            placeholder="••••••••"
+                          />
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            disabled={!npmApiUrl || !npmApiEmail || !npmApiPassword || npmConnectStatus === "connecting"}
+                            onClick={handleNpmConnect}
+                            className="font-mono text-xs border border-accent/35 bg-accent/10 px-4 py-2 text-accent transition hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {npmConnectStatus === "connecting" ? "connecting..." : "connect"}
+                          </button>
+                          {npmConnectStatus === "error" && (
+                            <span className="font-mono text-xs text-danger">{npmConnectError}</span>
+                          )}
+                        </div>
+                        <p className="font-mono text-[0.62rem] leading-5 text-muted/60">
+                          Routeviz fetches a token from NPM. Your password is not stored.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="grid gap-5 px-4 py-5 sm:px-5 lg:grid-cols-[210px_minmax(0,1fr)]">
+              <div>
+                <p className="font-mono text-[0.62rem] uppercase tracking-[0.22em] text-muted/70">
                   DNS_DRIFT_CHECKS
                 </p>
                 <h3 className="mt-2 font-mono text-sm font-bold text-foreground">
@@ -355,7 +526,7 @@ export default function SetupConsole({
 
                   {baselineMode === "disabled" ? (
                     <p className="mt-2 font-mono text-xs leading-6 text-foreground/80">
-                      Netcanary will keep recording DNS answers, but it will not open
+                      Routeviz will keep recording DNS answers, but it will not open
                       mismatch findings from them.
                     </p>
                   ) : (
@@ -659,14 +830,14 @@ export default function SetupConsole({
             </div>
             <div className="px-4 py-3">
               <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
-                npm_source_path
+                npm_connector
+              </div>
+              <div className="mt-1 font-mono text-xs font-bold text-foreground">
+                {npmConnectorMode === "api" ? "API (remote)" : "SQLite (local)"}
               </div>
               <div className="mt-2 break-all border border-border/50 bg-panel-2 px-3 py-2 font-mono text-[0.65rem] leading-6 text-foreground/85">
-                {settings.npmSqlitePath}
+                {npmConnectorMode === "api" ? (npmApiUrl || "—") : npmSqlitePath}
               </div>
-              <p className="mt-2 font-mono text-[0.62rem] leading-6 text-muted/70">
-                Only change these if your local mount layout differs from the default install.
-              </p>
             </div>
           </div>
         </section>

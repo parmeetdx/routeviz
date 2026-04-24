@@ -7,9 +7,9 @@ import {
   compactFindingNextCheck,
   compactFindingTypeLabel,
 } from "@/lib/finding-copy";
-import type { Finding, WorkloadFinding } from "@/lib/ops-ledger-types";
-import { getOpsLedgerState, getSuppressedFindings, suppressionKey } from "@/lib/ops-ledger-server";
-import { getFindingsBySeverity, getSeverityCounts } from "@/lib/ops-ledger.mjs";
+import type { Finding, WorkloadFinding } from "@/lib/routeviz-types";
+import { getRoutevizState, getSuppressedFindings, suppressionKey } from "@/lib/routeviz-server";
+import { getFindingsBySeverity, getSeverityCounts } from "@/lib/routeviz.mjs";
 import { buildServiceExplorerModel } from "@/lib/service-explorer";
 
 export const dynamic = "force-dynamic";
@@ -122,7 +122,7 @@ export default async function FindingsPage({
     findingBuckets.find((bucket) => bucket.key === requestedBucket) ?? findingBuckets[0];
 
   const [{ snapshot }, suppressedKeys] = await Promise.all([
-    getOpsLedgerState(),
+    getRoutevizState(),
     getSuppressedFindings(),
   ]);
 

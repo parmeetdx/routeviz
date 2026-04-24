@@ -17,7 +17,7 @@ import {
   compactFindingNextCheck,
   compactFindingTypeLabel,
 } from "@/lib/finding-copy";
-import type { Finding, FindingSeverity } from "@/lib/ops-ledger-types";
+import type { Finding, FindingSeverity } from "@/lib/routeviz-types";
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -78,7 +78,7 @@ export default function ServiceExplorer({
               <Link href="/" className="flex items-center gap-2 select-none">
                 <span className="font-mono text-accent text-lg font-bold tracking-widest"
                   style={{ textShadow: "0 0 12px rgba(57,255,122,0.6)" }}>
-                  NETCANARY
+                  ROUTEVIZ
                 </span>
                 <span className="blink font-mono text-accent text-lg leading-none">▋</span>
               </Link>
