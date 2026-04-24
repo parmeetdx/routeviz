@@ -18,9 +18,9 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ops Ledger",
+  title: "Netcanary",
   description:
-    "A self-hosted route exposure dashboard for Docker workloads behind reverse proxies, tunnels, and public entrypoints.",
+    "A self-hosted security scanner for Docker workloads — monitors exposed routes, TLS certificates, and container posture behind reverse proxies and tunnels.",
 };
 
 export default function RootLayout({
