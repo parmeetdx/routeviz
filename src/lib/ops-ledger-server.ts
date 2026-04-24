@@ -29,6 +29,7 @@ import type {
   RelatedWorkload,
   RouteMatchState,
   RouteRecord,
+  WorkloadFinding,
   WorkloadRecord,
 } from "@/lib/ops-ledger-types";
 
@@ -81,6 +82,7 @@ type SettingsUpdate = {
   scanConfig?: Partial<PersistedSettings["scanConfig"]>;
   webhookConfig?: Partial<PersistedSettings["webhookConfig"]>;
   authOverrides?: string[];
+  suppressedFindings?: string[];
 };
 
 type DockerPort = {
@@ -94,9 +96,11 @@ type DockerContainerSummary = {
   Id: string;
   Names: string[];
   Image: string;
+  ImageID?: string;
   State: string;
   Ports?: DockerPort[];
   Labels?: Record<string, string>;
+  Created?: number;
 };
 
 type DockerMount = {
@@ -128,7 +132,9 @@ type DockerWorkload = {
   id: string;
   name: string;
   image: string;
+  latestImageTag: string | null;
   state: string;
+  createdAt: string | null;
   composeProject: string | null;
   serviceName: string | null;
   composePath: string | null;
@@ -202,6 +208,7 @@ const defaultSettings: PersistedSettings = {
     lastDeliveryStatus: null,
   },
   authOverrides: [],
+  suppressedFindings: [],
 };
 
 const globalOpsLedger = globalThis as typeof globalThis & {
@@ -270,6 +277,7 @@ function normalizeSettings(input: Partial<PersistedSettings> = {}): PersistedSet
       lastDeliveryStatus: input.webhookConfig?.lastDeliveryStatus ?? null,
     },
     authOverrides: Array.isArray(input.authOverrides) ? input.authOverrides.map(String) : [],
+    suppressedFindings: Array.isArray(input.suppressedFindings) ? input.suppressedFindings.map(String) : [],
   };
 }
 
@@ -349,11 +357,14 @@ function normalizeSnapshot(snapshot: Partial<OpsLedgerSnapshot>): OpsLedgerSnaps
   return {
     ...(snapshot as OpsLedgerSnapshot),
     connectors: Array.isArray(snapshot.connectors) ? snapshot.connectors : [],
-    workloads: Array.isArray(snapshot.workloads) ? snapshot.workloads : [],
+    workloads: Array.isArray(snapshot.workloads)
+      ? snapshot.workloads.map((w) => ({ ...w, createdAt: w.createdAt ?? null, latestImageTag: w.latestImageTag ?? null }))
+      : [],
     routes: Array.isArray(snapshot.routes)
       ? snapshot.routes.map((r) => ({ ...r, selfAuthDetected: r.selfAuthDetected ?? false }))
       : [],
     findings: Array.isArray(snapshot.findings) ? snapshot.findings : [],
+    workloadFindings: Array.isArray(snapshot.workloadFindings) ? snapshot.workloadFindings : [],
     changes: Array.isArray(snapshot.changes) ? snapshot.changes : [],
   };
 }
@@ -551,6 +562,7 @@ function buildWorkload(
     name,
     image: summary.Image,
     state: summary.State,
+    createdAt: typeof summary.Created === "number" ? new Date(summary.Created * 1000).toISOString() : null,
     composeProject,
     serviceName: composeService,
     composePath,
@@ -565,7 +577,55 @@ function buildWorkload(
       .filter(Boolean)
       .sort(),
     dockerSocketMount: summarizeDockerSocketMount(inspect.Mounts),
+    latestImageTag: null,
   } satisfies DockerWorkload;
+}
+
+function parseImageRef(image: string): { namespace: string; name: string } | null {
+  const withoutTag = image.split(":")[0];
+  const parts = withoutTag.split("/");
+
+  // Reject non-Docker Hub images (custom registry, e.g. ghcr.io/...)
+  if (parts.length >= 2 && (parts[0].includes(".") || parts[0].includes(":"))) {
+    return null;
+  }
+
+  if (parts.length === 1) {
+    return { namespace: "library", name: parts[0] };
+  }
+  if (parts.length === 2) {
+    return { namespace: parts[0], name: parts[1] };
+  }
+  // e.g. "jc21/nginx-proxy-manager" — already covered by length 2
+  return { namespace: parts[parts.length - 2], name: parts[parts.length - 1] };
+}
+
+async function fetchLatestImageTag(image: string): Promise<string | null> {
+  const ref = parseImageRef(image);
+  if (!ref) return null;
+
+  return new Promise((resolve) => {
+    const path = `/v2/repositories/${ref.namespace}/${ref.name}/tags?page_size=10&ordering=last_updated`;
+    const req = https.request(
+      { hostname: "hub.docker.com", path, method: "GET", headers: { "User-Agent": "ops-ledger-probe/1.0" } },
+      (res) => {
+        let body = "";
+        res.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+        res.on("end", () => {
+          try {
+            const data = JSON.parse(body) as { results?: Array<{ name: string }> };
+            const versioned = (data.results ?? []).find((t) => t.name !== "latest" && /\d/.test(t.name));
+            resolve(versioned?.name ?? null);
+          } catch {
+            resolve(null);
+          }
+        });
+      },
+    );
+    req.setTimeout(5000, () => { req.destroy(); resolve(null); });
+    req.on("error", () => resolve(null));
+    req.end();
+  });
 }
 
 async function scanDocker(socketPath: string) {
@@ -585,7 +645,18 @@ async function scanDocker(socketPath: string) {
     }),
   );
 
-  return workloads.sort((left, right) => left.name.localeCompare(right.name));
+  // Batch-fetch latest Docker Hub tags for unique images (one request per unique image base)
+  const uniqueImages = [...new Set(workloads.map((w) => w.image))];
+  const tagMap = new Map<string, string | null>();
+  await Promise.all(
+    uniqueImages.map(async (img) => {
+      tagMap.set(img, await fetchLatestImageTag(img));
+    }),
+  );
+
+  return workloads
+    .map((w) => ({ ...w, latestImageTag: tagMap.get(w.image) ?? null }))
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 async function readSqliteJson<T>(databasePath: string, query: string) {
@@ -658,8 +729,10 @@ function buildRelatedWorkloads(
   return related.map((item) => ({
     name: item.name,
     image: item.image,
+    latestImageTag: item.latestImageTag,
     state: item.state,
     role: item.serviceName ?? "container",
+    createdAt: item.createdAt,
     composeProject: item.composeProject,
     serviceName: item.serviceName,
     composePath: item.composePath,
@@ -679,8 +752,10 @@ function serializeWorkload(workload: DockerWorkload) {
     id: workload.id,
     name: workload.name,
     image: workload.image,
+    latestImageTag: workload.latestImageTag,
     state: workload.state,
     role: workload.serviceName ?? "container",
+    createdAt: workload.createdAt,
     composeProject: workload.composeProject,
     serviceName: workload.serviceName,
     composePath: workload.composePath,
@@ -1058,7 +1133,9 @@ function pushFinding(
   title: string,
   evidence: string,
   nextCheck: string,
+  suppressed?: Set<string>,
 ) {
+  if (suppressed?.has(suppressionKey(type, route.slug))) return;
   findings.push({
     id: `${route.slug}-${type}`,
     routeSlug: route.slug,
@@ -1282,148 +1359,123 @@ function hasAuthLayer(route: RouteRecord): boolean {
   return route.selfAuthDetected;
 }
 
-function createFindings(routes: RouteRecord[]) {
+function createFindings(routes: RouteRecord[], suppressed: Set<string>) {
   const findings: Finding[] = [];
 
   for (const route of routes) {
     if (route.matchState === "ambiguous") {
       pushFinding(
-        findings,
-        route,
-        "ambiguous_target",
-        "high",
+        findings, route, "ambiguous_target", "high",
         `${route.entrypoint} has multiple plausible workloads`,
         route.notes,
         "Tighten the NPM target or Docker network aliases so the route resolves to a single workload.",
+        suppressed,
       );
     }
 
     if (route.matchState === "unmatched") {
       pushFinding(
-        findings,
-        route,
-        "unmatched_target",
-        "high",
+        findings, route, "unmatched_target", "high",
         `${route.entrypoint} does not map to a live local workload`,
         route.notes,
         "Confirm the target port is still published or update the proxy host to the current service endpoint.",
+        suppressed,
       );
     }
 
     if (route.matchState === "off_host") {
       pushFinding(
-        findings,
-        route,
-        "off_host_target",
-        "medium",
+        findings, route, "off_host_target", "medium",
         `${route.entrypoint} forwards outside the scanned Docker host`,
         route.notes,
         "Keep it if the off-host dependency is intentional, otherwise bring the route back onto this host or document the dependency.",
+        suppressed,
       );
     }
 
     if (route.confidence === "medium") {
       pushFinding(
-        findings,
-        route,
-        "host_mode_inference",
-        "medium",
+        findings, route, "host_mode_inference", "medium",
         `${route.entrypoint} relies on host-network inference`,
         route.notes,
         "Prefer explicit container alias or published-port targeting if you want this route to stay easy to verify.",
+        suppressed,
       );
     }
 
     if (route.duplicateDomainCount > 1) {
       pushFinding(
-        findings,
-        route,
-        "duplicate_proxy_host",
-        "high",
+        findings, route, "duplicate_proxy_host", "high",
         `${route.entrypoint} exists in ${route.duplicateDomainCount} enabled proxy host records`,
         `Multiple active NPM rows resolve to ${route.target}. Ops Ledger kept the most recently modified record for the main route view.`,
         "Archive or delete the extra proxy host records before one of them drifts silently.",
+        suppressed,
       );
     }
 
     if (route.sharedTargetCount > 1) {
       pushFinding(
-        findings,
-        route,
-        "shared_forward_target",
+        findings, route, "shared_forward_target",
         route.sharedTargetCount >= 3 ? "medium" : "low",
         `${route.sharedTargetCount} routes share ${route.target}`,
         `This entrypoint shares the same forward target as ${route.sharedTargetCount - 1} other route${route.sharedTargetCount === 2 ? "" : "s"}.`,
         "Confirm every extra hostname is intentional. This is often where stale domains hide.",
+        suppressed,
       );
     }
 
     if (route.tlsDaysRemaining !== null && route.tlsDaysRemaining < 0) {
       pushFinding(
-        findings,
-        route,
-        "certificate_expired",
-        "high",
+        findings, route, "certificate_expired", "high",
         `${route.entrypoint} has an expired certificate`,
         `${route.certificateLabel ?? "Certificate"} expired ${Math.abs(route.tlsDaysRemaining)} day${Math.abs(route.tlsDaysRemaining) === 1 ? "" : "s"} ago.`,
         "Renew or replace the certificate immediately.",
+        suppressed,
       );
-    } else if (
-      route.tlsDaysRemaining !== null &&
-      route.tlsDaysRemaining <= 30
-    ) {
+    } else if (route.tlsDaysRemaining !== null && route.tlsDaysRemaining <= 30) {
       pushFinding(
-        findings,
-        route,
-        "certificate_expiring",
-        "medium",
+        findings, route, "certificate_expiring", "medium",
         `${route.entrypoint} enters the renewal window soon`,
         `${route.certificateLabel ?? "Certificate"} expires in ${route.tlsDaysRemaining} day${route.tlsDaysRemaining === 1 ? "" : "s"}.`,
         "Verify the renewal flow before the expiry window closes.",
+        suppressed,
       );
     }
 
     if (route.dnsStatus === "unresolved") {
       pushFinding(
-        findings,
-        route,
-        "dns_unresolved",
-        "medium",
+        findings, route, "dns_unresolved", "medium",
         `${route.entrypoint} does not resolve in DNS`,
         "The current DNS lookup returned no public answers for this hostname.",
         "Confirm the DNS record still exists and your DDNS provider is current.",
+        suppressed,
       );
     }
 
     if (route.dnsStatus === "mismatch") {
       pushFinding(
-        findings,
-        route,
-        "dns_mismatch",
-        "medium",
+        findings, route, "dns_mismatch", "medium",
         `${route.entrypoint} does not match the configured DNS baseline`,
         `Observed answers: ${route.dnsAnswers.join(", ")}.`,
         "Check the baseline setting or the current public endpoint before trusting this route.",
+        suppressed,
       );
     }
 
     if (route.relatedWorkloads.some((workload) => workload.dockerSocketMount === "read_write")) {
       pushFinding(
-        findings,
-        route,
-        "docker_socket_write_mount",
-        "high",
+        findings, route, "docker_socket_write_mount", "high",
         `${route.entrypoint} lands on a workload with read-write Docker socket access`,
         `${route.workloadLabel} has /var/run/docker.sock mounted read-write.`,
         "Treat this route as a high-sensitivity management surface and keep it behind stronger auth.",
+        suppressed,
       );
     }
 
     if (!hasAuthLayer(route)) {
       const mgmt = isManagementSurface(route);
       pushFinding(
-        findings,
-        route,
+        findings, route,
         mgmt ? "management_surface" : "no_auth_layer",
         mgmt ? "high" : "medium",
         mgmt
@@ -1433,11 +1485,152 @@ function createFindings(routes: RouteRecord[]) {
           ? `${route.workloadLabel} looks like an operational console with no NPM access list or forward-auth found.`
           : "No NPM access list configured and no Authelia/Authentik/oauth2-proxy found in the compose stack.",
         "Add Authelia, Authentik, or an NPM access list, or confirm public access is intentional.",
+        suppressed,
       );
     }
   }
 
   return findings;
+}
+
+// Known backup tools — detected by image name or compose service name in the stack.
+const BACKUP_TOOL_IMAGES = new Set([
+  "duplicati", "duplicacy", "restic", "borgbackup", "borg",
+  "rclone", "rsnapshot", "backrest", "kopia",
+  "syncthing",
+  "borgmatic", "volumerize", "offen-backup",
+  "backup-tools", "docker-vackup",
+]);
+
+// Mount path prefixes that indicate persistent user data worth backing up.
+// System paths like /proc, /sys, /dev, /run, /tmp are excluded.
+const PERSISTENT_PATH_PREFIXES = [
+  "/home", "/data", "/storage", "/media", "/var/lib",
+  "/config", "/configs", "/opt", "/srv", "/mnt",
+  "/backup", "/backups", "/volumes",
+];
+
+function isMountPersistent(mountPath: string): boolean {
+  const lower = mountPath.toLowerCase();
+  return PERSISTENT_PATH_PREFIXES.some((prefix) => lower.startsWith(prefix));
+}
+
+function createWorkloadFindings(workloads: DockerWorkload[], routes: RouteRecord[], suppressed: Set<string>): WorkloadFinding[] {
+  const findings: WorkloadFinding[] = [];
+
+  // Build a set of workload IDs that are reachable via at least one proxy route
+  const routeLinkedWorkloadIds = new Set(
+    routes.flatMap((r) => r.relatedWorkloads.map((w) => w.name)),
+  );
+
+  // Build a set of all compose projects that have a backup tool running
+  const projectsWithBackup = new Set<string>();
+  for (const workload of workloads) {
+    const baseName = stripImageToBaseName(workload.image);
+    const serviceNameLower = (workload.serviceName ?? "").toLowerCase();
+    if (BACKUP_TOOL_IMAGES.has(baseName) || BACKUP_TOOL_IMAGES.has(serviceNameLower)) {
+      if (workload.composeProject) {
+        projectsWithBackup.add(workload.composeProject);
+      }
+    }
+  }
+
+  for (const workload of workloads) {
+    const baseName = stripImageToBaseName(workload.image);
+    const isLatestTag = workload.image.endsWith(":latest") || (!workload.image.includes(":") && workload.image.includes("/")) || (workload.image.split(":").length === 1);
+
+    // ── PORT EXPOSURE AUDIT ────────────────────────────────────────────────
+    // Flag containers publishing ports directly to all interfaces (0.0.0.0 or unspecified)
+    // that are NOT linked to any proxy route — potential unintentional exposure.
+    const unproxiedPorts = workload.publishedPorts.filter((port) => {
+      const isAllInterfaces = port.hostIp === null || port.hostIp === "0.0.0.0" || port.hostIp === "::";
+      const isLinkedViaProxy = routeLinkedWorkloadIds.has(workload.name);
+      return isAllInterfaces && !isLinkedViaProxy;
+    });
+    // Deduplicate by publicPort (Docker reports TCP + UDP separately)
+    const dedupedPorts = unproxiedPorts.filter(
+      (port, idx, arr) => arr.findIndex((p) => p.publicPort === port.publicPort) === idx,
+    );
+
+    if (dedupedPorts.length > 0 && !suppressed.has(suppressionKey("port_bypass", workload.name))) {
+      const portList = dedupedPorts.map((p) => `${p.publicPort}→${p.privatePort}`).join(", ");
+      findings.push({
+        id: `${workload.id}-port_bypass`,
+        workloadId: workload.id,
+        workloadName: workload.name,
+        type: "port_bypass",
+        severity: "medium",
+        title: `${workload.name} is publishing ports directly without a proxy`,
+        evidence: `Port${dedupedPorts.length > 1 ? "s" : ""} ${portList} bound to all interfaces with no matching proxy route.`,
+        nextCheck: "Confirm this is intentional. If the service should only be reached through a reverse proxy, remove the host port binding.",
+      });
+    }
+
+    // ── IMAGE STALENESS ────────────────────────────────────────────────────
+    // Flag containers using :latest tag (unpinned version).
+    if (isLatestTag && !suppressed.has(suppressionKey("image_latest", workload.name))) {
+      const latestNote = workload.latestImageTag
+        ? ` Latest available version on Docker Hub: ${workload.latestImageTag}.`
+        : "";
+      findings.push({
+        id: `${workload.id}-image_latest`,
+        workloadId: workload.id,
+        workloadName: workload.name,
+        type: "image_latest",
+        severity: "low",
+        title: `${workload.name} is running an unpinned image tag`,
+        evidence: `Image: ${workload.image}. Using :latest or an untagged image means updates are unpredictable — the container may silently change behaviour after a pull.${latestNote}`,
+        nextCheck: "Pin the image to a specific version tag in your compose file to get predictable, auditable deployments.",
+      });
+    }
+
+    // Flag containers whose image hasn't been refreshed in over 90 days.
+    if (workload.createdAt && !suppressed.has(suppressionKey("image_stale", workload.name))) {
+      const ageMs = Date.now() - new Date(workload.createdAt).getTime();
+      const ageDays = Math.floor(ageMs / (1000 * 60 * 60 * 24));
+      if (ageDays > 90) {
+        const latestNote = workload.latestImageTag
+          ? ` Latest available version on Docker Hub: ${workload.latestImageTag}.`
+          : "";
+        findings.push({
+          id: `${workload.id}-image_stale`,
+          workloadId: workload.id,
+          workloadName: workload.name,
+          type: "image_stale",
+          severity: "low",
+          title: `${workload.name} has not been recreated in ${ageDays} days`,
+          evidence: `Container started ${ageDays} days ago (${workload.createdAt.slice(0, 10)}). Long-running containers may be missing security patches from newer image releases.${latestNote}`,
+          nextCheck: "Pull the latest image and recreate the container to pick up any upstream security fixes.",
+        });
+      }
+    }
+
+    // ── BACKUP STATUS ──────────────────────────────────────────────────────
+    // Flag containers with persistent mounts in a compose stack that has no backup tool.
+    const persistentMounts = workload.mounts.filter(isMountPersistent);
+    const hasBackupInStack = workload.composeProject
+      ? projectsWithBackup.has(workload.composeProject)
+      : false;
+
+    if (persistentMounts.length > 0 && !hasBackupInStack && !suppressed.has(suppressionKey("no_backup", workload.name))) {
+      findings.push({
+        id: `${workload.id}-no_backup`,
+        workloadId: workload.id,
+        workloadName: workload.name,
+        type: "no_backup",
+        severity: "low",
+        title: `${workload.name} has persistent storage with no backup tool detected`,
+        evidence: `Mount${persistentMounts.length > 1 ? "s" : ""}: ${persistentMounts.slice(0, 3).join(", ")}${persistentMounts.length > 3 ? ` +${persistentMounts.length - 3} more` : ""}. No known backup tool found in the compose stack.`,
+        nextCheck: "Add a backup tool (Duplicati, Restic, Kopia, etc.) to the stack, or confirm an external backup solution covers these paths.",
+      });
+    }
+  }
+
+  return findings;
+}
+
+export function suppressionKey(type: string, name: string) {
+  return `${type}:${name}`;
 }
 
 async function buildSnapshot(settings: PersistedSettings) {
@@ -1560,7 +1753,14 @@ async function buildSnapshot(settings: PersistedSettings) {
     lastSyncAt: new Date().toISOString(),
   });
 
-  const findings = createFindings(routes).sort((left, right) => {
+  const suppressed = new Set(settings.suppressedFindings ?? []);
+
+  const findings = createFindings(routes, suppressed).sort((left, right) => {
+    const order = { high: 0, medium: 1, low: 2 };
+    return order[left.severity] - order[right.severity];
+  });
+
+  const workloadFindings = createWorkloadFindings(workloads, routes, suppressed).sort((left, right) => {
     const order = { high: 0, medium: 1, low: 2 };
     return order[left.severity] - order[right.severity];
   });
@@ -1594,6 +1794,7 @@ async function buildSnapshot(settings: PersistedSettings) {
     workloads: workloads.map((workload) => serializeWorkload(workload)),
     routes,
     findings,
+    workloadFindings,
     changes: [],
   } satisfies OpsLedgerSnapshot;
 }
@@ -1713,6 +1914,7 @@ export async function getOpsLedgerState(): Promise<OpsLedgerState> {
   if (!snapshot) {
     return {
       snapshot: getFallbackSnapshot(store.settings),
+      snapshots: [],
       history: [],
       settings: store.settings,
       recentChanges: [],
@@ -1721,6 +1923,7 @@ export async function getOpsLedgerState(): Promise<OpsLedgerState> {
 
   return {
     snapshot,
+    snapshots: store.snapshots,
     history: getHistoryPoints(store.snapshots),
     settings: store.settings,
     recentChanges: getRecentChanges(store.snapshots),
@@ -1737,6 +1940,7 @@ export async function triggerManualScan() {
 
   return {
     snapshot,
+    snapshots: store.snapshots,
     history: getHistoryPoints(store.snapshots),
     settings: store.settings,
     recentChanges: getRecentChanges(store.snapshots),
@@ -1766,6 +1970,7 @@ export async function saveSettings(
         ...input.webhookConfig,
       },
       authOverrides: input.authOverrides ?? store.settings.authOverrides,
+      suppressedFindings: input.suppressedFindings ?? store.settings.suppressedFindings,
     }),
   };
 
@@ -1774,8 +1979,35 @@ export async function saveSettings(
 
   return {
     snapshot: snapshot ?? getFallbackSnapshot(nextStore.settings),
+    snapshots: nextStore.snapshots,
     history: getHistoryPoints(nextStore.snapshots),
     settings: nextStore.settings,
     recentChanges: getRecentChanges(nextStore.snapshots),
   };
+}
+
+export async function suppressFinding(key: string): Promise<void> {
+  const store = await ensureStore();
+  const current = store.settings.suppressedFindings ?? [];
+  if (current.includes(key)) return;
+  const nextStore: StoreFile = {
+    ...store,
+    settings: { ...store.settings, suppressedFindings: [...current, key] },
+  };
+  await writeStore(nextStore);
+}
+
+export async function unsuppressFinding(key: string): Promise<void> {
+  const store = await ensureStore();
+  const current = store.settings.suppressedFindings ?? [];
+  const nextStore: StoreFile = {
+    ...store,
+    settings: { ...store.settings, suppressedFindings: current.filter((k) => k !== key) },
+  };
+  await writeStore(nextStore);
+}
+
+export async function getSuppressedFindings(): Promise<string[]> {
+  const store = await ensureStore();
+  return store.settings.suppressedFindings ?? [];
 }

@@ -9,11 +9,11 @@ export default async function RoutesPage({
 }: {
   searchParams: Promise<{ service?: string }>;
 }) {
-  const [{ snapshot }, params] = await Promise.all([
+  const [{ snapshot, snapshots }, params] = await Promise.all([
     getOpsLedgerState(),
     searchParams,
   ]);
-  const model = buildServiceExplorerModel(snapshot, params.service ?? null);
+  const model = buildServiceExplorerModel(snapshot, params.service ?? null, snapshots);
 
   return (
     <ServiceExplorer

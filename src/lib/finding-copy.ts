@@ -18,6 +18,14 @@ export function compactFindingTypeLabel(type: string) {
       return "shared target";
     case "ambiguous_target":
       return "ambiguous";
+    case "port_bypass":
+      return "direct port";
+    case "image_latest":
+      return "unpinned image";
+    case "image_stale":
+      return "stale image";
+    case "no_backup":
+      return "no backup";
     default:
       return humanizeFindingType(type);
   }
@@ -39,6 +47,14 @@ export function compactFindingHeadline(type: string) {
       return "Shared forward target";
     case "ambiguous_target":
       return "Ambiguous target";
+    case "port_bypass":
+      return "Port published without proxy";
+    case "image_latest":
+      return "Unpinned image tag";
+    case "image_stale":
+      return "Image not refreshed recently";
+    case "no_backup":
+      return "No backup tool in stack";
     default:
       return humanizeFindingType(type);
   }
@@ -60,6 +76,14 @@ export function compactFindingNextCheck(type: string) {
       return "Confirm extra hostname";
     case "ambiguous_target":
       return "Resolve the target";
+    case "port_bypass":
+      return "Remove host port binding or add proxy";
+    case "image_latest":
+      return "Pin to a specific version tag";
+    case "image_stale":
+      return "Pull latest and recreate";
+    case "no_backup":
+      return "Add a backup tool to the stack";
     default:
       return "Inspect path";
   }
