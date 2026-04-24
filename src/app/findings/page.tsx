@@ -1,13 +1,14 @@
 import Link from "next/link";
 
 import { ConsoleCard, ConsolePage } from "@/components/console-page";
+import { SuppressButton } from "@/components/suppress-button";
 import {
   compactFindingHeadline,
   compactFindingNextCheck,
   compactFindingTypeLabel,
 } from "@/lib/finding-copy";
-import type { Finding } from "@/lib/ops-ledger-types";
-import { getOpsLedgerState } from "@/lib/ops-ledger-server";
+import type { Finding, WorkloadFinding } from "@/lib/ops-ledger-types";
+import { getOpsLedgerState, getSuppressedFindings, suppressionKey } from "@/lib/ops-ledger-server";
 import { getFindingsBySeverity, getSeverityCounts } from "@/lib/ops-ledger.mjs";
 import { buildServiceExplorerModel } from "@/lib/service-explorer";
 
@@ -15,6 +16,7 @@ export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<{
   bucket?: string | string[] | undefined;
+  showSuppressed?: string;
 }>;
 
 type BucketKey =
@@ -24,13 +26,16 @@ type BucketKey =
   | "low"
   | "certificate_expired"
   | "unmatched_target"
-  | "management";
+  | "management"
+  | "exposure"
+  | "storage";
 
 interface FindingBucket {
   key: BucketKey;
   label: string;
   href: string;
   matches: (finding: Finding) => boolean;
+  workloadMatches?: (finding: WorkloadFinding) => boolean;
 }
 
 const findingBuckets: FindingBucket[] = [
@@ -39,24 +44,28 @@ const findingBuckets: FindingBucket[] = [
     label: "ALL",
     href: "/findings",
     matches: () => true,
+    workloadMatches: () => true,
   },
   {
     key: "critical",
     label: "CRITICAL",
     href: "/findings?bucket=critical",
     matches: (finding) => finding.severity === "high",
+    workloadMatches: (finding) => finding.severity === "high",
   },
   {
     key: "medium",
     label: "MEDIUM",
     href: "/findings?bucket=medium",
     matches: (finding) => finding.severity === "medium",
+    workloadMatches: (finding) => finding.severity === "medium",
   },
   {
     key: "low",
     label: "LOW",
     href: "/findings?bucket=low",
     matches: (finding) => finding.severity === "low",
+    workloadMatches: (finding) => finding.severity === "low",
   },
   {
     key: "certificate_expired",
@@ -77,17 +86,26 @@ const findingBuckets: FindingBucket[] = [
     matches: (finding) =>
       ["management_surface", "docker_socket_write_mount", "no_auth_layer"].includes(finding.type),
   },
+  {
+    key: "exposure",
+    label: "CONTAINERS",
+    href: "/findings?bucket=exposure",
+    matches: () => false,
+    workloadMatches: (finding) =>
+      ["port_bypass", "image_latest", "image_stale"].includes(finding.type),
+  },
+  {
+    key: "storage",
+    label: "STORAGE",
+    href: "/findings?bucket=storage",
+    matches: () => false,
+    workloadMatches: (finding) => finding.type === "no_backup",
+  },
 ];
 
 function severityClasses(severity: string) {
-  if (severity === "high") {
-    return "border-danger/40 bg-danger/10 text-danger";
-  }
-
-  if (severity === "medium") {
-    return "border-warning/40 bg-warning/10 text-warning";
-  }
-
+  if (severity === "high") return "border-danger/40 bg-danger/10 text-danger";
+  if (severity === "medium") return "border-warning/40 bg-warning/10 text-warning";
   return "border-accent/30 bg-accent/8 text-accent";
 }
 
@@ -103,52 +121,69 @@ export default async function FindingsPage({
   const activeBucket =
     findingBuckets.find((bucket) => bucket.key === requestedBucket) ?? findingBuckets[0];
 
-  const { snapshot } = await getOpsLedgerState();
-  const findings = getFindingsBySeverity(snapshot);
+  const [{ snapshot }, suppressedKeys] = await Promise.all([
+    getOpsLedgerState(),
+    getSuppressedFindings(),
+  ]);
+
+  const suppressedSet = new Set(suppressedKeys);
+
+  const findings = (getFindingsBySeverity(snapshot) as Finding[]).filter(
+    (f) => !suppressedSet.has(suppressionKey(f.type, f.routeSlug)),
+  );
+  const workloadFindings: WorkloadFinding[] = (snapshot.workloadFindings ?? []).filter(
+    (f) => !suppressedSet.has(suppressionKey(f.type, f.workloadName)),
+  );
   const severityCounts = getSeverityCounts(findings);
   const model = buildServiceExplorerModel(snapshot, null);
   const serviceMeta = new Map(
     model.services.map((service) => [
       service.id,
-      {
-        label: service.label,
-        secondaryLabel: service.secondaryLabel,
-      },
+      { label: service.label, secondaryLabel: service.secondaryLabel },
     ]),
   );
 
   const bucketCounts = new Map(
     findingBuckets.map((bucket) => [
       bucket.key,
-      findings.filter((finding) => bucket.matches(finding)).length,
+      findings.filter((f) => bucket.matches(f)).length +
+        workloadFindings.filter((f) => bucket.workloadMatches?.(f) ?? false).length,
     ]),
   );
 
   const filteredFindings = findings.filter((finding) => activeBucket.matches(finding));
+  const filteredWorkloadFindings = workloadFindings.filter(
+    (finding) => activeBucket.workloadMatches?.(finding) ?? false,
+  );
+
   const sections =
     activeBucket.key === "all"
       ? [
           {
             title: "CRITICAL",
             eyebrow: "HIGH SEVERITY",
-            findings: findings.filter((finding) => finding.severity === "high"),
+            findings: findings.filter((f) => f.severity === "high"),
+            workloadFindings: workloadFindings.filter((f) => f.severity === "high"),
           },
           {
             title: "MEDIUM",
             eyebrow: "NEEDS REVIEW",
-            findings: findings.filter((finding) => finding.severity === "medium"),
+            findings: findings.filter((f) => f.severity === "medium"),
+            workloadFindings: workloadFindings.filter((f) => f.severity === "medium"),
           },
           {
             title: "LOW",
             eyebrow: "WATCH LIST",
-            findings: findings.filter((finding) => finding.severity === "low"),
+            findings: findings.filter((f) => f.severity === "low"),
+            workloadFindings: workloadFindings.filter((f) => f.severity === "low"),
           },
-        ].filter((section) => section.findings.length > 0)
+        ].filter((s) => s.findings.length > 0 || s.workloadFindings.length > 0)
       : [
           {
             title: activeBucket.label,
             eyebrow: "FILTERED QUEUE",
             findings: filteredFindings,
+            workloadFindings: filteredWorkloadFindings,
           },
         ];
 
@@ -170,6 +205,14 @@ export default async function FindingsPage({
           <span className={`font-mono text-xs border px-2.5 py-1 ${severityClasses("low")}`}>
             {severityCounts.low} LOW
           </span>
+          {suppressedKeys.length > 0 && (
+            <Link
+              href="/setup#suppressions"
+              className="font-mono text-xs border border-muted/25 bg-muted/5 px-2.5 py-1 text-muted/60 hover:text-muted/90 transition"
+            >
+              {suppressedKeys.length} suppressed
+            </Link>
+          )}
         </>
       }
     >
@@ -205,14 +248,13 @@ export default async function FindingsPage({
       {/* ── Finding sections ── */}
       {sections.map((section) => (
         <ConsoleCard key={section.title} title={section.title} eyebrow={section.eyebrow}>
-          {section.findings.length === 0 ? (
+          {section.findings.length === 0 && section.workloadFindings.length === 0 ? (
             <div className="border border-border/50 bg-panel-2 px-4 py-3 font-mono text-xs text-muted/70">
               <span className="text-accent/40 mr-1">✓</span>
               No findings active in this category.
             </div>
           ) : (
             <div className="border border-border/50">
-              {/* Table column header */}
               <div className="hidden md:grid md:grid-cols-[2fr_1fr_auto] gap-x-4 border-b border-border/50 bg-panel-2 px-4 py-1.5">
                 <div className="font-mono text-[0.58rem] uppercase tracking-[0.3em] text-muted/50">
                   SERVICE / TYPE / EVIDENCE
@@ -227,7 +269,6 @@ export default async function FindingsPage({
               <div className="divide-y divide-border/40">
                 {section.findings.map((finding) => {
                   const meta = serviceMeta.get(finding.routeSlug);
-
                   return (
                     <FindingRow
                       key={finding.id}
@@ -237,9 +278,21 @@ export default async function FindingsPage({
                       href={`/routes?service=${finding.routeSlug}#service-detail`}
                       serviceLabel={meta?.label ?? finding.routeSlug}
                       secondaryLabel={meta?.secondaryLabel ?? finding.routeSlug}
+                      suppressKey={suppressionKey(finding.type, finding.routeSlug)}
                     />
                   );
                 })}
+                {section.workloadFindings.map((finding) => (
+                  <WorkloadFindingRow
+                    key={finding.id}
+                    type={finding.type}
+                    severity={finding.severity}
+                    evidence={finding.evidence}
+                    workloadName={finding.workloadName}
+                    nextCheck={finding.nextCheck}
+                    suppressKey={suppressionKey(finding.type, finding.workloadName)}
+                  />
+                ))}
               </div>
             </div>
           )}
@@ -256,6 +309,7 @@ function FindingRow({
   href,
   serviceLabel,
   secondaryLabel,
+  suppressKey,
 }: {
   type: string;
   severity: string;
@@ -263,14 +317,13 @@ function FindingRow({
   href: string;
   serviceLabel: string;
   secondaryLabel: string;
+  suppressKey: string;
 }) {
   return (
     <article className="group px-4 py-3 hover:bg-panel-2/60 transition">
       <div className="flex flex-col gap-2 md:grid md:grid-cols-[2fr_1fr_auto] md:items-start md:gap-x-4">
-        {/* Col 1: service + type + evidence */}
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            {/* Severity indicator */}
             <span
               className={[
                 "h-1.5 w-1.5 shrink-0 rounded-full",
@@ -286,19 +339,15 @@ function FindingRow({
             </span>
           </div>
           <div className="mt-1 font-mono text-[0.65rem] text-muted/70 truncate">{secondaryLabel}</div>
-          <div className="mt-1 font-mono text-xs text-foreground/70 line-clamp-1">{evidence}</div>
+          <div className="mt-1 font-mono text-xs text-foreground/70">{evidence}</div>
         </div>
-
-        {/* Col 2: headline + next-check */}
         <div className="min-w-0">
           <div className="font-mono text-xs text-foreground/85">{compactFindingHeadline(type)}</div>
           <div className="mt-1 font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
             {compactFindingNextCheck(type)}
           </div>
         </div>
-
-        {/* Col 3: action */}
-        <div className="flex items-center">
+        <div className="flex flex-col items-end gap-1.5">
           <Link
             href={href}
             className="font-mono text-xs border border-accent/30 bg-accent/8 px-3 py-1.5 text-accent transition hover:bg-accent/18 hover:border-accent/55 whitespace-nowrap"
@@ -306,6 +355,63 @@ function FindingRow({
           >
             open→
           </Link>
+          <SuppressButton suppressKey={suppressKey} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function WorkloadFindingRow({
+  type,
+  severity,
+  evidence,
+  workloadName,
+  nextCheck,
+  suppressKey,
+}: {
+  type: string;
+  severity: string;
+  evidence: string;
+  workloadName: string;
+  nextCheck: string;
+  suppressKey: string;
+}) {
+  return (
+    <article className="group px-4 py-3 hover:bg-panel-2/60 transition">
+      <div className="flex flex-col gap-2 md:grid md:grid-cols-[2fr_1fr_auto] md:items-start md:gap-x-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={[
+                "h-1.5 w-1.5 shrink-0 rounded-full",
+                severity === "high" ? "bg-danger" : severity === "medium" ? "bg-warning" : "bg-accent",
+              ].join(" ")}
+            />
+            <span className="font-mono text-sm font-bold text-foreground">{workloadName}</span>
+            <span className={`font-mono text-[0.62rem] uppercase tracking-wider border px-2 py-0.5 leading-none ${severityClasses(severity)}`}>
+              {compactFindingTypeLabel(type)}
+            </span>
+            <span className={`font-mono text-[0.6rem] uppercase tracking-wider border px-1.5 py-0.5 leading-none ${severityClasses(severity)}`}>
+              {severity}
+            </span>
+            <span className="font-mono text-[0.58rem] uppercase tracking-wider border border-muted/20 bg-muted/5 px-1.5 py-0.5 leading-none text-muted/50">
+              container
+            </span>
+          </div>
+          <div className="mt-1 font-mono text-xs text-foreground/70">{evidence}</div>
+        </div>
+        <div className="min-w-0">
+          <div className="font-mono text-xs text-foreground/85">{compactFindingHeadline(type)}</div>
+          <div className="mt-1 font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
+            {nextCheck}
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          <span className="font-mono text-xs border border-border/30 bg-panel-2 px-3 py-1.5 text-muted/40 whitespace-nowrap">
+            no route
+          </span>
+          <SuppressButton suppressKey={suppressKey} />
         </div>
       </div>
     </article>

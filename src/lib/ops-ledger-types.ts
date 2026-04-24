@@ -36,8 +36,10 @@ export interface Finding {
 export interface RelatedWorkload {
   name: string;
   image: string;
+  latestImageTag: string | null;
   state: string;
   role: string;
+  createdAt: string | null;
   composeProject: string | null;
   serviceName: string | null;
   composePath: string | null;
@@ -53,6 +55,17 @@ export interface WorkloadRecord extends RelatedWorkload {
   id: string;
   aliases: string[];
   internalIps: string[];
+}
+
+export interface WorkloadFinding {
+  id: string;
+  workloadId: string;
+  workloadName: string;
+  type: string;
+  severity: FindingSeverity;
+  title: string;
+  evidence: string;
+  nextCheck: string;
 }
 
 export interface RouteRecord {
@@ -132,6 +145,7 @@ export interface OpsLedgerSnapshot {
   workloads: WorkloadRecord[];
   routes: RouteRecord[];
   findings: Finding[];
+  workloadFindings: WorkloadFinding[];
   changes: SnapshotChange[];
 }
 
@@ -192,10 +206,12 @@ export interface PersistedSettings {
   };
   webhookConfig: WebhookConfig;
   authOverrides: string[];
+  suppressedFindings: string[];
 }
 
 export interface OpsLedgerState {
   snapshot: OpsLedgerSnapshot;
+  snapshots: OpsLedgerSnapshot[];
   history: SnapshotHistoryPoint[];
   settings: PersistedSettings;
   recentChanges: SnapshotChange[];

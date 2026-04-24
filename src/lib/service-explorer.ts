@@ -29,6 +29,11 @@ export interface ExplorerChainCard {
   mono?: boolean;
 }
 
+export interface SparklinePoint {
+  state: string;
+  generatedAt: string;
+}
+
 export interface ExplorerService {
   id: string;
   kind: ServiceKind;
@@ -51,6 +56,7 @@ export interface ExplorerService {
   findings: Finding[];
   warningCount: number;
   containerCount: number;
+  availabilitySparkline: SparklinePoint[];
 }
 
 export interface ServiceExplorerModel {
@@ -103,6 +109,7 @@ const SPECIAL_LABELS = new Map<string, string>([
 export function buildServiceExplorerModel(
   snapshot: OpsLedgerSnapshot,
   selectedId: string | null,
+  snapshots?: OpsLedgerSnapshot[],
 ): ServiceExplorerModel {
   const findingsByRoute = new Map<string, Finding[]>();
 
@@ -112,8 +119,21 @@ export function buildServiceExplorerModel(
     findingsByRoute.set(finding.routeSlug, bucket);
   }
 
+  // Build per-route sparkline from last 48 snapshots (chronological order)
+  const sparklineBySlug = new Map<string, SparklinePoint[]>();
+  if (snapshots && snapshots.length > 0) {
+    const recentSnapshots = snapshots.slice(-48);
+    for (const snap of recentSnapshots) {
+      for (const route of snap.routes) {
+        const points = sparklineBySlug.get(route.slug) ?? [];
+        points.push({ state: route.matchState, generatedAt: snap.generatedAt });
+        sparklineBySlug.set(route.slug, points);
+      }
+    }
+  }
+
   const publicServices = snapshot.routes.map((route) =>
-    buildPublicService(snapshot, route, findingsByRoute.get(route.slug) ?? []),
+    buildPublicService(snapshot, route, findingsByRoute.get(route.slug) ?? [], sparklineBySlug.get(route.slug) ?? []),
   );
   const internalServices = buildInternalServices(snapshot);
   const services = [...publicServices, ...internalServices].sort(sortServices);
@@ -144,6 +164,7 @@ function buildPublicService(
   snapshot: OpsLedgerSnapshot,
   route: RouteRecord,
   findings: Finding[],
+  availabilitySparkline: SparklinePoint[] = [],
 ): ExplorerService {
   const workloads = route.relatedWorkloads;
   const allContainersRunning =
@@ -346,6 +367,7 @@ function buildPublicService(
     findings,
     warningCount,
     containerCount,
+    availabilitySparkline,
   };
 }
 
@@ -473,6 +495,7 @@ function buildInternalService(
     findings: [],
     warningCount,
     containerCount: workloads.length,
+    availabilitySparkline: [],
   };
 }
 
@@ -519,6 +542,13 @@ function getPreferredRank(label: string) {
   return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
+// Domain prefixes that don't describe the service — fall back to workload name instead.
+const GENERIC_DOMAIN_PREFIXES = new Set([
+  "app", "apps", "host", "hosts", "home", "server", "nas", "lan",
+  "local", "internal", "private", "web", "www", "api", "cloud",
+  "my", "self", "main", "admin",
+]);
+
 function getPublicLabel(route: RouteRecord) {
   const haystack = [
     route.entrypoint,
@@ -542,8 +572,17 @@ function getPublicLabel(route: RouteRecord) {
     return "Paperless-ngx";
   }
 
-  const token = route.entrypoint.split(".")[0] ?? route.entrypoint;
-  return humanizeToken(token);
+  const domainPrefix = route.entrypoint.split(".")[0] ?? route.entrypoint;
+
+  // If the domain prefix is generic, use the workload/service name instead
+  if (GENERIC_DOMAIN_PREFIXES.has(domainPrefix.toLowerCase())) {
+    const workloadToken = route.serviceName ?? route.containerName ?? route.workloadLabel;
+    if (workloadToken && workloadToken !== "No confident workload") {
+      return humanizeToken(workloadToken);
+    }
+  }
+
+  return humanizeToken(domainPrefix);
 }
 
 function getInternalLabel(workloads: WorkloadRecord[]) {
