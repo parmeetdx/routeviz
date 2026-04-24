@@ -44,11 +44,18 @@ export type DockerContainerInspect = {
   };
 };
 
+export type ImageUpdateStatus =
+  | "outdated"       // running semver < latest semver — confirmed behind
+  | "unknown"        // can't compare (latest tag, untagged, non-semver) — nudge to check
+  | "up_to_date"     // running semver === latest semver
+  | "no_data";       // couldn't fetch latest tag at all
+
 export type DockerWorkload = {
   id: string;
   name: string;
   image: string;
   latestImageTag: string | null;
+  imageUpdateStatus: ImageUpdateStatus;
   state: string;
   createdAt: string | null;
   composeProject: string | null;
@@ -162,7 +169,35 @@ function buildWorkload(summary: DockerContainerSummary, inspect: DockerContainer
       .sort(),
     dockerSocketMount: summarizeDockerSocketMount(inspect.Mounts),
     latestImageTag: null,
+    imageUpdateStatus: "no_data",
   };
+}
+
+function parseSemver(tag: string): [number, number, number] | null {
+  const clean = tag.replace(/^v/, "").split("-")[0]; // strip v prefix and build suffix
+  const parts = clean.split(".").map(Number);
+  if (parts.length < 2 || parts.some(isNaN)) return null;
+  const [major = 0, minor = 0, patch = 0] = parts;
+  return [major, minor, patch];
+}
+
+function compareImageUpdateStatus(runningTag: string, latestTag: string): ImageUpdateStatus {
+  // Untagged or :latest — can't compare, nudge to check
+  if (!runningTag || runningTag === "latest") return "unknown";
+
+  const running = parseSemver(runningTag);
+  const latest = parseSemver(latestTag);
+
+  // Either tag isn't parseable as semver — nudge to check
+  if (!running || !latest) return "unknown";
+
+  const [rMaj, rMin, rPat] = running;
+  const [lMaj, lMin, lPat] = latest;
+
+  if (lMaj > rMaj || (lMaj === rMaj && lMin > rMin) || (lMaj === rMaj && lMin === rMin && lPat > rPat)) {
+    return "outdated";
+  }
+  return "up_to_date";
 }
 
 function parseImageRef(image: string): { namespace: string; name: string } | null {
@@ -174,12 +209,27 @@ function parseImageRef(image: string): { namespace: string; name: string } | nul
   return { namespace: parts[parts.length - 2], name: parts[parts.length - 1] };
 }
 
+// Returns true for tags that look like real release versions:
+// 1.2.3, v1.2.3, 1.2, 1.2.3-alpine, 1.2.3-debian — but NOT:
+// sha-abc123, renovate-*, windowsservercore-*, latest, edge, stable, nightly
+function isVersionTag(tag: string): boolean {
+  // Must start with a digit or "v" followed by a digit
+  if (!/^v?\d/.test(tag)) return false;
+  // Must contain at least one dot (e.g. 1.2 or 1.2.3)
+  if (!tag.includes(".")) return false;
+  // Reject platform/OS suffix tags
+  if (/windows|ltsc|nanoserver|servercore/i.test(tag)) return false;
+  // Reject SHA-based tags
+  if (/^(sha-|[0-9a-f]{7,40}$)/i.test(tag)) return false;
+  return true;
+}
+
 async function fetchLatestImageTag(image: string): Promise<string | null> {
   const ref = parseImageRef(image);
   if (!ref) return null;
 
   return new Promise((resolve) => {
-    const path = `/v2/repositories/${ref.namespace}/${ref.name}/tags?page_size=10&ordering=last_updated`;
+    const path = `/v2/repositories/${ref.namespace}/${ref.name}/tags?page_size=50&ordering=last_updated`;
     const req = https.request(
       { hostname: "hub.docker.com", path, method: "GET", headers: { "User-Agent": "routeviz-probe/1.0" } },
       (res) => {
@@ -188,8 +238,17 @@ async function fetchLatestImageTag(image: string): Promise<string | null> {
         res.on("end", () => {
           try {
             const data = JSON.parse(body) as { results?: Array<{ name: string }> };
-            const versioned = (data.results ?? []).find((t) => t.name !== "latest" && /\d/.test(t.name));
-            resolve(versioned?.name ?? null);
+            const candidates = (data.results ?? []).map((t) => t.name).filter(isVersionTag);
+            if (candidates.length === 0) { resolve(null); return; }
+
+            candidates.sort((a, b) => {
+              const n = (s: string) => s.replace(/^v/, "").split(/[.\-]/).slice(0, 3).map((x) => parseInt(x) || 0);
+              const [a1 = 0, a2 = 0, a3 = 0] = n(a);
+              const [b1 = 0, b2 = 0, b3 = 0] = n(b);
+              return b1 - a1 || b2 - a2 || b3 - a3;
+            });
+
+            resolve(candidates[0] ?? null);
           } catch {
             resolve(null);
           }
@@ -217,6 +276,13 @@ export async function scanDocker(socketPath: string): Promise<DockerWorkload[]> 
   await Promise.all(uniqueImages.map(async (img) => { tagMap.set(img, await fetchLatestImageTag(img)); }));
 
   return workloads
-    .map((w) => ({ ...w, latestImageTag: tagMap.get(w.image) ?? null }))
+    .map((w) => {
+      const latestImageTag = tagMap.get(w.image) ?? null;
+      const runningTag = w.image.includes(":") ? w.image.split(":")[1] : "latest";
+      const imageUpdateStatus: ImageUpdateStatus = latestImageTag
+        ? compareImageUpdateStatus(runningTag ?? "latest", latestImageTag)
+        : "no_data";
+      return { ...w, latestImageTag, imageUpdateStatus };
+    })
     .sort((left, right) => left.name.localeCompare(right.name));
 }
