@@ -11,7 +11,7 @@ function formatTimestampLabel(iso) {
 
 export function getDnsBaselineHelper(dnsBaseline) {
   if (dnsBaseline.mode === "disabled") {
-    return "DNS mismatch checks are off. Ops Ledger records answers but does not enforce a baseline.";
+    return "DNS mismatch checks are off. Routeviz records answers but does not enforce a baseline.";
   }
 
   if (dnsBaseline.mode === "reference_hostname") {

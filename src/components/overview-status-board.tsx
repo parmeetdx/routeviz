@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { compactFindingTypeLabel } from "@/lib/finding-copy";
-import type { FindingSeverity, SnapshotChange } from "@/lib/ops-ledger-types";
+import type { FindingSeverity, SnapshotChange } from "@/lib/routeviz-types";
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");

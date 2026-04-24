@@ -1,12 +1,12 @@
 import { ConsolePage } from "@/components/console-page";
 import SetupConsole from "@/components/setup-console";
-import { getOpsLedgerState } from "@/lib/ops-ledger-server";
+import { getRoutevizState } from "@/lib/routeviz-server";
 import { buildServiceExplorerModel } from "@/lib/service-explorer";
 
 export const dynamic = "force-dynamic";
 
 export default async function SetupPage() {
-  const { settings, snapshot } = await getOpsLedgerState();
+  const { settings, snapshot } = await getRoutevizState();
   const model = buildServiceExplorerModel(snapshot, null);
 
   return (

@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import type { Connector, PersistedSettings } from "@/lib/ops-ledger-types";
+import type { Connector, PersistedSettings } from "@/lib/routeviz-types";
 
-import { Badge } from "./ops-ledger-ui";
+import { Badge } from "./routeviz-ui";
 
 type BaselineMode = PersistedSettings["dnsBaseline"]["mode"];
 
@@ -113,7 +113,7 @@ export default function SetupConsole({
       label: "Off",
       description: "No DNS mismatch alerts",
       helper:
-        "Netcanary records DNS answers, but it does not compare them against an expected endpoint.",
+        "Routeviz records DNS answers, but it does not compare them against an expected endpoint.",
       example: "Best for most installs when you only want exposure findings.",
       recommended: true,
     },
@@ -172,7 +172,7 @@ export default function SetupConsole({
 
   const baselineText =
     baselineMode === "disabled"
-      ? "DNS mismatch checks are off. Netcanary still records answers it sees."
+      ? "DNS mismatch checks are off. Routeviz still records answers it sees."
       : baselineMode === "reference_hostname"
         ? `Comparing public routes against ${baselineValue || "your trusted hostname"}.`
         : `Comparing public routes against ${baselineValue || "your explicit endpoint"}.`;
@@ -355,7 +355,7 @@ export default function SetupConsole({
 
                   {baselineMode === "disabled" ? (
                     <p className="mt-2 font-mono text-xs leading-6 text-foreground/80">
-                      Netcanary will keep recording DNS answers, but it will not open
+                      Routeviz will keep recording DNS answers, but it will not open
                       mismatch findings from them.
                     </p>
                   ) : (
