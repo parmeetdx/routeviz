@@ -42,7 +42,7 @@ export default function LoginPage() {
         return;
       }
       setSuccess(true);
-      router.push("/");
+      router.push("/overview");
     } catch {
       setError("Network error. Please try again.");
       setLoading(false);
