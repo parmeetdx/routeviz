@@ -107,7 +107,12 @@ export async function runScanAndPersist(settings: PersistedSettings): Promise<vo
     dbGetExposureIntents(),
   ]);
   const settingsWithSuppressed = { ...settings, suppressedFindings: suppressedKeys };
-  const snapshot = await buildSnapshot(settingsWithSuppressed, exposureIntents);
+  const snapshot = await buildSnapshot(settingsWithSuppressed, exposureIntents, async (connectorId, newToken) => {
+    const updatedConnectors = settings.connectors.map((c) =>
+      c.id === connectorId ? { ...c, options: { ...c.options, apiToken: newToken } } : c,
+    );
+    await dbUpsertSettings({ ...settings, connectors: updatedConnectors });
+  });
   const previous = await dbGetActiveSnapshot();
   const changes = previous ? diffSnapshots(previous, snapshot) : [];
   const snapshotWithChanges = { ...snapshot, changes };

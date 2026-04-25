@@ -107,41 +107,26 @@ describe("getDnsBaselineAnswers", () => {
     vi.resetModules();
   });
 
+  const baseSettings = {
+    dockerSocketPath: "/var/run/docker.sock",
+    hostAddress: "192.168.1.5",
+    hostLabel: "miniserver",
+    connectors: [{ id: "npm", type: "npm" as const, label: "Nginx Proxy Manager", enabled: true, options: { mode: "sqlite" as const, sqlitePath: "", apiUrl: "", apiToken: "" } }],
+    scanConfig: { intervalEnabled: true, intervalMinutes: 5, retentionLimit: 576, driftIntervalDays: 7 },
+    webhookConfig: { enabled: false, url: "", severityThreshold: "high" as const, lastDeliveryAt: null, lastDeliveryStatus: null },
+    authOverrides: [],
+    suppressedFindings: [],
+  };
+
   it("returns empty for disabled mode", async () => {
     const { getDnsBaselineAnswers } = await import("./dns");
-    const settings = {
-      dockerSocketPath: "/var/run/docker.sock",
-      hostAddress: "192.168.1.5",
-      hostLabel: "miniserver",
-      npmConnectorMode: "sqlite" as const,
-      npmSqlitePath: "",
-      npmApiUrl: "",
-      npmApiToken: "",
-      dnsBaseline: { mode: "disabled" as const, value: "" },
-      scanConfig: { intervalEnabled: true, intervalMinutes: 5, retentionLimit: 576, driftIntervalDays: 7 },
-      webhookConfig: { enabled: false, url: "", severityThreshold: "high" as const, lastDeliveryAt: null, lastDeliveryStatus: null },
-      authOverrides: [],
-      suppressedFindings: [],
-    };
+    const settings = { ...baseSettings, dnsBaseline: { mode: "disabled" as const, value: "" } };
     expect(await getDnsBaselineAnswers(settings)).toEqual([]);
   });
 
   it("returns empty for empty value", async () => {
     const { getDnsBaselineAnswers } = await import("./dns");
-    const settings = {
-      dockerSocketPath: "/var/run/docker.sock",
-      hostAddress: "192.168.1.5",
-      hostLabel: "miniserver",
-      npmConnectorMode: "sqlite" as const,
-      npmSqlitePath: "",
-      npmApiUrl: "",
-      npmApiToken: "",
-      dnsBaseline: { mode: "reference_hostname" as const, value: "" },
-      scanConfig: { intervalEnabled: true, intervalMinutes: 5, retentionLimit: 576, driftIntervalDays: 7 },
-      webhookConfig: { enabled: false, url: "", severityThreshold: "high" as const, lastDeliveryAt: null, lastDeliveryStatus: null },
-      authOverrides: [],
-      suppressedFindings: [],
-    };
+    const settings = { ...baseSettings, dnsBaseline: { mode: "reference_hostname" as const, value: "" } };
     expect(await getDnsBaselineAnswers(settings)).toEqual([]);
   });
 
@@ -150,20 +135,7 @@ describe("getDnsBaselineAnswers", () => {
       lookup: vi.fn().mockRejectedValue(new Error("ENOTFOUND")),
     }));
     const { getDnsBaselineAnswers } = await import("./dns");
-    const settings = {
-      dockerSocketPath: "/var/run/docker.sock",
-      hostAddress: "192.168.1.5",
-      hostLabel: "miniserver",
-      npmConnectorMode: "sqlite" as const,
-      npmSqlitePath: "",
-      npmApiUrl: "",
-      npmApiToken: "",
-      dnsBaseline: { mode: "manual_endpoint" as const, value: "1.2.3.4" },
-      scanConfig: { intervalEnabled: true, intervalMinutes: 5, retentionLimit: 576, driftIntervalDays: 7 },
-      webhookConfig: { enabled: false, url: "", severityThreshold: "high" as const, lastDeliveryAt: null, lastDeliveryStatus: null },
-      authOverrides: [],
-      suppressedFindings: [],
-    };
+    const settings = { ...baseSettings, dnsBaseline: { mode: "manual_endpoint" as const, value: "1.2.3.4" } };
     const result = await getDnsBaselineAnswers(settings);
     expect(result).toEqual(["1.2.3.4"]);
   });

@@ -30,9 +30,9 @@ export function ConsolePage({
 }) {
   const navItems = [
     { href: "/overview", label: "overview", active: eyebrow === "Overview" },
-    { href: "/setup", label: "setup", active: eyebrow === "Setup" },
     { href: "/routes", label: "routes", active: eyebrow === "Routes" },
     { href: "/findings", label: "findings", active: eyebrow === "Findings" },
+    { href: "/setup", label: "setup", active: eyebrow === "Setup" },
   ];
 
   return (
