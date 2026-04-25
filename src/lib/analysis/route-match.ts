@@ -285,8 +285,15 @@ export async function createRouteRecord(
   const selfAuthDetected = seedMatch || overrideMatch || httpAuthDetected;
   const { slugify } = await import("@/lib/routeviz.mjs");
 
+  // Qualify slug with connectorId when it differs from the legacy default so
+  // routes from different connectors with the same domain don't collide.
+  const slugBase = primaryDomain ?? `route-${route.sourceId}`;
+  const slug = route.connectorId && route.connectorId !== "npm"
+    ? slugify(`${route.connectorId}-${slugBase}`)
+    : slugify(slugBase);
+
   return {
-    slug: slugify(primaryDomain ?? `route-${route.sourceId}`),
+    slug,
     entrypoint: primaryDomain ?? `route-${route.sourceId}`,
     primaryDomain,
     edgeSource: route.sourceName,

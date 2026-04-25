@@ -57,10 +57,9 @@ export default function ServiceExplorer({
     model.activeService;
 
   useEffect(() => {
-    if (!activeService || window.location.hash !== "#service-detail") {
-      return;
-    }
-
+    if (!activeService) return;
+    setMobileInventoryOpen(false);
+    if (window.location.hash !== "#service-detail") return;
     requestAnimationFrame(() => {
       document
         .getElementById("service-detail")
@@ -129,17 +128,8 @@ export default function ServiceExplorer({
 
             {/* ── Detail panel ── */}
             <section className="min-h-0">
-              {activeService ? (
-                <ServiceDetail service={activeService} />
-              ) : (
-                <div className="border border-border bg-panel px-5 py-5 font-mono text-xs text-muted/70">
-                  <span className="text-accent/40 mr-1">$</span>
-                  No services available in current snapshot.
-                </div>
-              )}
-
               {/* Mobile inventory toggle */}
-              <div className="mt-5 xl:hidden">
+              <div className="mb-5 xl:hidden">
                 <div className="border border-border bg-panel/95">
                   <button
                     type="button"
@@ -182,6 +172,15 @@ export default function ServiceExplorer({
                   ) : null}
                 </div>
               </div>
+
+              {activeService ? (
+                <ServiceDetail service={activeService} />
+              ) : (
+                <div className="border border-border bg-panel px-5 py-5 font-mono text-xs text-muted/70">
+                  <span className="text-accent/40 mr-1">$</span>
+                  No services available in current snapshot.
+                </div>
+              )}
             </section>
           </div>
         </main>
