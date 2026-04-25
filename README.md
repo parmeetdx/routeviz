@@ -1,24 +1,56 @@
-# Routeviz
+<div align="center">
 
-**Self-hosted exposure chain monitor for homelabs and self-hosted stacks.**
+  <h1>Routeviz</h1>
 
-Routeviz maps the full path from public entrypoint → reverse proxy → upstream target → live container, then flags what's broken or risky. It's built for people who run Dockerized services behind a reverse proxy and want one honest answer to: *what's actually exposed, and should it be?*
+  <p>Routeviz is a free and open-source exposure chain monitor for homelabs and self-hosted stacks.<br/>It maps every route from public entrypoint → reverse proxy → upstream target → live container, then flags what's broken or risky.</p>
 
-> **Status:** Early release. NPM (Nginx Proxy Manager) connector is production-ready. Traefik and additional connectors are in progress.
+  <p>
+    <a href="https://github.com/parmeetdx/routeviz/releases"><strong>Get Started</strong></a>
+    ·
+    <a href="https://github.com/parmeetdx/routeviz/blob/main/CONTRIBUTING.md"><strong>Contributing</strong></a>
+    ·
+    <a href="https://github.com/parmeetdx/routeviz/issues"><strong>Report a Bug</strong></a>
+  </p>
+
+  <p>
+    <img src="https://img.shields.io/github/package-json/v/parmeetdx/routeviz?style=flat-square" alt="Version" />
+    <img src="https://img.shields.io/github/stars/parmeetdx/routeviz?style=flat-square" alt="GitHub Stars" />
+    <img src="https://img.shields.io/github/license/parmeetdx/routeviz?style=flat-square" alt="License" />
+    <img src="https://img.shields.io/github/actions/workflow/status/parmeetdx/routeviz/ci.yml?style=flat-square&label=CI" alt="CI" />
+  </p>
+
+  <img src="docs/screenshot.png" alt="Routeviz overview dashboard" width="80%" />
+
+</div>
 
 ---
 
-## What it does
+## Features
 
-- Reads routes from your reverse proxy (Nginx Proxy Manager via API or SQLite)
-- Matches each route to a running Docker container
-- Resolves DNS and checks TLS certificate expiry
-- Surfaces findings: unmatched routes, DNS drift, expiring certs, unauthenticated public endpoints
-- Tracks changes between scans and optionally fires a webhook on new high-severity findings
+**Exposure chain mapping**
+
+- Maps every route from public domain → reverse proxy → upstream target → live container
+- Matches routes to running Docker containers with confidence scoring
+- Shows the full chain — proxy host, target, workload, networks, and ports
+
+**Findings**
+
+- Unmatched or dead-target routes
+- Unauthenticated public endpoints
+- DNS drift and resolution failures
+- Expiring and expired TLS certificates
+- Exposed Docker socket mounts and privileged containers
+
+**Operations**
+
+- Scheduled and manual scans
+- Change tracking between snapshots
+- Webhook alerts on new high-severity findings
+- Exposure intent overrides — mark routes as intentionally public, auth-required, or private
 
 ---
 
-## Quick start
+## Quick Start
 
 **Prerequisites:** Docker and Docker Compose on the host running your services.
 
@@ -28,7 +60,7 @@ curl -O https://raw.githubusercontent.com/parmeetdx/routeviz/main/docker-compose
 curl -O https://raw.githubusercontent.com/parmeetdx/routeviz/main/.env.example
 cp .env.example .env
 
-# 2. Edit .env — at minimum set HOST_ADDRESS to your host's LAN IP
+# 2. Set HOST_ADDRESS to your host's LAN IP
 #    Run: hostname -I | awk '{print $1}'
 nano .env
 
@@ -42,19 +74,6 @@ On first launch you'll be prompted to create an account, then connect your rever
 
 ---
 
-## Configuration
-
-All settings are managed through the Setup UI. The `.env` file only controls infrastructure-level options:
-
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `8141` | Port Routeviz listens on |
-| `POSTGRES_PASSWORD` | `changeme` | Password for the internal Postgres instance — change before exposing |
-| `HOST_ADDRESS` | *(auto-detected)* | Override the host IP used for route matching. Required in most Docker setups. Run `hostname -I \| awk '{print $1}'` to find it. |
-| `NPM_DATA_PATH` | — | Only needed if using NPM **SQLite mode**. Path to your NPM data directory on the host (e.g. `/opt/nginx-proxy-manager/data`). Not required for API mode. |
-
----
-
 ## Connectors
 
 | Connector | Status | Notes |
@@ -64,6 +83,32 @@ All settings are managed through the Setup UI. The `.env` file only controls inf
 | DNS | ✅ Ready | Resolves public answers per route |
 | Traefik | 🔜 Coming soon | — |
 | Caddy | 🔜 Planned | — |
+
+---
+
+## Tech Stack
+
+| Category | Technology |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Language | TypeScript |
+| Database | PostgreSQL |
+| Styling | Tailwind CSS v4 |
+| Runtime connector | Docker socket API |
+| Tests | Vitest |
+
+---
+
+## Configuration
+
+All settings are managed through the Setup UI. The `.env` file only controls infrastructure-level options:
+
+| Variable | Default | Description |
+|---|---|---|
+| `HOST_ADDRESS` | *(auto-detected)* | Your host's LAN IP — required in most Docker setups |
+| `PORT` | `8141` | Port Routeviz listens on |
+| `POSTGRES_PASSWORD` | `changeme` | Password for the internal Postgres instance |
+| `NPM_DATA_PATH` | — | SQLite mode only — path to your NPM data directory on the host |
 
 ---
 
@@ -80,14 +125,27 @@ npm run dev
 ```
 
 ```bash
-npm test          # run test suite
-npm run typecheck # type check
+npm test           # run test suite
+npx tsc --noEmit   # type check
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full setup and contribution guide.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full setup and connector authoring guide.
+
+---
+
+## Contributing
+
+Contributions are welcome — bug fixes, new connectors, UI improvements, or docs.
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feat/traefik-connector`)
+3. Commit your changes
+4. Push and open a Pull Request
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed instructions.
 
 ---
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — do whatever you want with it.
