@@ -1,3 +1,19 @@
+export type ProxySourceType = "npm" | "traefik" | "caddy" | "nginx" | "haproxy";
+
+export type EdgeRouteInput = {
+  sourceType: ProxySourceType;
+  sourceName: string;
+  sourceId: string;
+  domains: string[];
+  targetHost: string;
+  targetPort: number;
+  targetScheme?: "http" | "https" | "tcp";
+  tls?: { enabled: boolean; certName?: string | null; expiresAt?: string | null; provider?: string | null };
+  authSignals: string[];
+  rawHints: string[];
+  duplicateDomainCount: number;
+};
+
 export type ConnectorStatus = "connected" | "degraded" | "disconnected";
 export type RouteMatchState =
   | "matched"
@@ -81,6 +97,7 @@ export interface RouteRecord {
   entrypoint: string;
   primaryDomain: string | null;
   edgeSource: string;
+  sourceType: ProxySourceType;
   target: string;
   workloadLabel: string;
   matchState: RouteMatchState;
@@ -97,11 +114,10 @@ export interface RouteRecord {
   serviceName: string | null;
   containerName: string | null;
   hostAddress: string | null;
-  sourceRecordId: number | null;
+  sourceRecordId: string | null;
   duplicateDomainCount: number;
   sharedTargetCount: number;
-  npmAccessListId: number;
-  npmAdvancedConfig: string | null;
+  authSignals: string[];
   selfAuthDetected: boolean;
   chain: string[];
   relatedWorkloads: RelatedWorkload[];

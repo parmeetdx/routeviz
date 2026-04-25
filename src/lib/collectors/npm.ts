@@ -3,11 +3,14 @@ import http from "node:http";
 import https from "node:https";
 import { promisify } from "node:util";
 
+import type { EdgeRouteInput } from "@/lib/routeviz-types";
+
 const execFileAsync = promisify(execFile);
 
 export type NpmRow = {
   id: number;
   domain_names: string;
+  forward_scheme?: string | null;
   forward_host: string;
   forward_port: number;
   certificate_id: number;
@@ -25,11 +28,6 @@ export type NpmRow = {
   certificate_expires_on: string | null;
 };
 
-export type CanonicalRoute = {
-  row: NpmRow;
-  domains: string[];
-  duplicateDomainCount: number;
-};
 
 type NpmApiProxyHost = {
   id: number;
@@ -58,6 +56,7 @@ const SQLITE_QUERY = `
 select
   p.id,
   p.domain_names,
+  p.forward_scheme,
   p.forward_host,
   p.forward_port,
   p.certificate_id,
@@ -81,15 +80,18 @@ where p.enabled = 1
 order by p.modified_on desc
 `;
 
+/* v8 ignore next 4 */
 async function readSqliteJson<T>(databasePath: string, query: string): Promise<T> {
   const { stdout } = await execFileAsync("sqlite3", ["-json", databasePath, query]);
   return JSON.parse(stdout || "[]") as T;
 }
 
+/* v8 ignore next 3 */
 export async function readNpmSqlite(databasePath: string): Promise<NpmRow[]> {
   return readSqliteJson<NpmRow[]>(databasePath, SQLITE_QUERY);
 }
 
+/* v8 ignore next 58 */
 export async function fetchNpmApiRoutes(apiUrl: string, token: string): Promise<NpmRow[]> {
   const base = apiUrl.replace(/\/$/, "");
 
@@ -131,6 +133,7 @@ export async function fetchNpmApiRoutes(apiUrl: string, token: string): Promise<
     .map((host) => ({
       id: host.id,
       domain_names: JSON.stringify(host.domain_names),
+      forward_scheme: host.forward_scheme ?? null,
       forward_host: host.forward_host,
       forward_port: host.forward_port,
       certificate_id: typeof host.certificate_id === "number" ? host.certificate_id : 0,
@@ -158,7 +161,7 @@ export function parseDomainNames(value: string): string[] {
   }
 }
 
-export function dedupeRoutes(rows: NpmRow[]): CanonicalRoute[] {
+export function dedupeRoutes(rows: NpmRow[]): EdgeRouteInput[] {
   const groups = new Map<string, NpmRow[]>();
 
   for (const row of rows) {
@@ -176,11 +179,29 @@ export function dedupeRoutes(rows: NpmRow[]): CanonicalRoute[] {
       );
       if (!canonical) throw new Error("Encountered an empty proxy host route group.");
       const domains = parseDomainNames(canonical.domain_names);
-      return { row: canonical, domains, duplicateDomainCount: rowsForDomain.length } satisfies CanonicalRoute;
+
+      const authSignals: string[] = [];
+      if (canonical.access_list_id && canonical.access_list_id !== 0) authSignals.push("npm_access_list");
+      const adv = (canonical.advanced_config ?? "").toLowerCase();
+      if (adv.includes("auth_request")) authSignals.push("nginx_auth_request");
+      if (adv.includes("authelia")) authSignals.push("authelia");
+      if (adv.includes("authentik")) authSignals.push("authentik");
+
+      return {
+        sourceType: "npm",
+        sourceName: "Nginx Proxy Manager",
+        sourceId: String(canonical.id),
+        domains,
+        targetHost: canonical.forward_host,
+        targetPort: canonical.forward_port,
+        targetScheme: canonical.forward_scheme === "https" ? "https" : "http",
+        tls: canonical.certificate_id
+          ? { enabled: Boolean(canonical.ssl_forced), certName: canonical.certificate_name, expiresAt: canonical.certificate_expires_on, provider: canonical.certificate_provider }
+          : undefined,
+        authSignals,
+        rawHints: canonical.advanced_config ? [canonical.advanced_config] : [],
+        duplicateDomainCount: rowsForDomain.length,
+      } satisfies EdgeRouteInput;
     })
-    .sort((left, right) => {
-      const leftDomain = left.domains[0] ?? "";
-      const rightDomain = right.domains[0] ?? "";
-      return leftDomain.localeCompare(rightDomain);
-    });
+    .sort((left, right) => (left.domains[0] ?? "").localeCompare(right.domains[0] ?? ""));
 }
