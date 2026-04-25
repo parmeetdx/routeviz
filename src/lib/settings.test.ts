@@ -15,10 +15,7 @@ function makeSettings(overrides: Partial<PersistedSettings> = {}): PersistedSett
     dockerSocketPath: "/var/run/docker.sock",
     hostAddress: "192.168.1.5",
     hostLabel: "miniserver",
-    npmConnectorMode: "sqlite",
-    npmSqlitePath: "/data/npm.sqlite",
-    npmApiUrl: "",
-    npmApiToken: "",
+    connectors: [{ id: "npm", type: "npm", label: "Nginx Proxy Manager", enabled: true, options: { mode: "sqlite", sqlitePath: "/data/npm.sqlite", apiUrl: "", apiToken: "" } }],
     dnsBaseline: { mode: "disabled", value: "" },
     scanConfig: {
       intervalEnabled: true,
@@ -104,7 +101,8 @@ describe("normalizeSettings", () => {
   it("returns defaults for empty input", () => {
     const result = normalizeSettings({});
     expect(result.dockerSocketPath).toBe("/var/run/docker.sock");
-    expect(result.npmConnectorMode).toBe("sqlite");
+    expect(result.connectors).toHaveLength(1);
+    expect(result.connectors[0].type).toBe("npm");
     expect(result.dnsBaseline.mode).toBe("disabled");
     expect(result.scanConfig.intervalMinutes).toBe(DEFAULT_INTERVAL_MINUTES);
     expect(result.scanConfig.retentionLimit).toBe(DEFAULT_RETENTION_LIMIT);
@@ -113,24 +111,27 @@ describe("normalizeSettings", () => {
     expect(result.suppressedFindings).toEqual([]);
   });
 
-  it("preserves provided values", () => {
+  it("preserves provided connector values", () => {
     const result = normalizeSettings({
       dockerSocketPath: "/custom/docker.sock",
       hostLabel: "myhost",
-      npmConnectorMode: "api",
-      npmApiUrl: "http://npm.local:81",
-      npmApiToken: "secret-token",
+      connectors: [{ id: "npm", type: "npm", label: "Nginx Proxy Manager", enabled: true, options: { mode: "api", sqlitePath: "", apiUrl: "http://npm.local:81", apiToken: "secret-token" } }],
     });
     expect(result.dockerSocketPath).toBe("/custom/docker.sock");
     expect(result.hostLabel).toBe("myhost");
-    expect(result.npmConnectorMode).toBe("api");
-    expect(result.npmApiUrl).toBe("http://npm.local:81");
-    expect(result.npmApiToken).toBe("secret-token");
+    const opts = result.connectors[0].options as { mode: string; apiUrl: string; apiToken: string };
+    expect(opts.mode).toBe("api");
+    expect(opts.apiUrl).toBe("http://npm.local:81");
+    expect(opts.apiToken).toBe("secret-token");
   });
 
-  it("normalizes invalid npm connector mode to sqlite", () => {
-    const result = normalizeSettings({ npmConnectorMode: "ftp" as "sqlite" | "api" });
-    expect(result.npmConnectorMode).toBe("sqlite");
+  it("migrates legacy flat npm fields to ConnectorConfig", () => {
+    const result = normalizeSettings({ npmConnectorMode: "api", npmApiUrl: "http://npm.local:81", npmApiToken: "tok" });
+    expect(result.connectors).toHaveLength(1);
+    const opts = result.connectors[0].options as { mode: string; apiUrl: string; apiToken: string };
+    expect(opts.mode).toBe("api");
+    expect(opts.apiUrl).toBe("http://npm.local:81");
+    expect(opts.apiToken).toBe("tok");
   });
 
   it("normalizes dns baseline mode", () => {

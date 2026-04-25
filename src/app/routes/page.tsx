@@ -20,9 +20,9 @@ export default async function RoutesPage({
       model={model}
       pageLinks={[
         { href: "/", label: "Overview" },
-        { href: "/setup", label: "Setup" },
         { href: "/routes", label: "Routes" },
         { href: "/findings", label: "Findings" },
+        { href: "/setup", label: "Setup" },
       ]}
     />
   );

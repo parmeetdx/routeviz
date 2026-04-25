@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import type { Connector, PersistedSettings } from "@/lib/routeviz-types";
+import type { Connector, ConnectorConfig, NpmConnectorOptions, PersistedSettings, TraefikConnectorOptions } from "@/lib/routeviz-types";
 
 import { Badge } from "./routeviz-ui";
 
@@ -43,16 +43,341 @@ function getConnectorSummary(connector: Connector) {
     return "Reads live Docker state for workload matching.";
   }
 
-  if (connector.id === "npm") {
-    return "Reads proxy hosts and certificate metadata from the local NPM source.";
-  }
-
   if (connector.id === "dns") {
     return "Resolves public DNS answers during each snapshot.";
   }
 
   return connector.details;
 }
+
+// ── NpmConnectorForm ──────────────────────────────────────────────────────────
+
+function NpmConnectorForm({
+  options,
+  onChange,
+  onConnect,
+}: {
+  options: NpmConnectorOptions;
+  onChange: (next: NpmConnectorOptions) => void;
+  onConnect?: (next: NpmConnectorOptions) => void;
+}) {
+  const [email, setEmail] = useState(options.apiEmail ?? "");
+  const [password, setPassword] = useState(options.apiPassword ?? "");
+  const [connectStatus, setConnectStatus] = useState<"idle" | "connecting" | "ok" | "error">("idle");
+  const [connectError, setConnectError] = useState("");
+
+  async function handleConnect() {
+    setConnectStatus("connecting");
+    setConnectError("");
+    try {
+      const res = await fetch("/api/npm-connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: options.apiUrl.trim(), email: email.trim(), password }),
+      });
+      const data = await res.json() as { token?: string; error?: string };
+      if (!res.ok || !data.token) {
+        setConnectStatus("error");
+        setConnectError(data.error ?? "Could not connect to NPM.");
+        return;
+      }
+      const next = { ...options, apiToken: data.token, apiEmail: email.trim(), apiPassword: password };
+      onChange(next);
+      setConnectStatus("ok");
+      onConnect?.(next);
+    } catch {
+      setConnectStatus("error");
+      setConnectError("Network error — check the NPM URL.");
+    }
+  }
+
+  return (
+    <div className="min-w-0 space-y-3">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {(["sqlite", "api"] as const).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => onChange({ ...options, mode })}
+            className={`min-w-0 border px-4 py-3 text-left transition ${
+              options.mode === mode
+                ? "border-accent/45 bg-panel-2 shadow-[inset_3px_0_0_0_var(--color-accent)]"
+                : "border-border/50 bg-panel hover:border-accent/25"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-mono text-xs font-bold text-foreground">
+                {mode === "sqlite" ? "SQLite (local)" : "API (remote)"}
+              </span>
+              {mode === "sqlite" ? (
+                <span className="font-mono text-[0.58rem] uppercase tracking-wider border border-success/30 bg-success/10 px-1.5 py-0.5 text-success">
+                  default
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-1.5 font-mono text-[0.62rem] leading-5 text-muted/70">
+              {mode === "sqlite" ? "Read directly from the bind-mounted SQLite file" : "Fetch routes via the NPM REST API"}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {options.mode === "sqlite" ? (
+        <div className="border border-border/50 bg-panel-2 px-4 py-4 space-y-3">
+          <label className="grid gap-2">
+            <span className="font-mono text-xs font-bold text-foreground">SQLite path</span>
+            <input
+              className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
+              value={options.sqlitePath}
+              onChange={(e) => onChange({ ...options, sqlitePath: e.target.value })}
+              placeholder="/npm-data/database.sqlite"
+            />
+          </label>
+          <p className="font-mono text-[0.62rem] leading-5 text-muted/60">
+            Mount the NPM data directory as <code className="text-foreground/70">/npm-data:ro</code> in docker-compose.yml.
+          </p>
+        </div>
+      ) : (
+        <div className="border border-border/50 bg-panel-2 px-4 py-4 space-y-3">
+          <label className="grid gap-2">
+            <span className="font-mono text-xs font-bold text-foreground">NPM base URL</span>
+            <input
+              className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
+              value={options.apiUrl}
+              onChange={(e) => { onChange({ ...options, apiUrl: e.target.value, apiToken: "" }); setConnectStatus("idle"); }}
+              placeholder="http://192.168.1.10:81"
+            />
+          </label>
+
+          {connectStatus === "ok" || (options.apiToken && connectStatus === "idle") ? (
+            <div className="flex items-center justify-between border border-success/20 bg-success/5 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs text-success">✓ connected</span>
+                <span className="font-mono text-[0.62rem] text-muted/50">Token active</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setConnectStatus("idle"); onChange({ ...options, apiToken: "" }); setEmail(""); setPassword(""); }}
+                className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/50 hover:text-accent transition border border-border/40 px-2 py-1"
+              >
+                refresh token
+              </button>
+            </div>
+          ) : (
+            <>
+              <label className="grid gap-2">
+                <span className="font-mono text-xs font-bold text-foreground">NPM email</span>
+                <input
+                  type="email"
+                  className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@example.com"
+                />
+              </label>
+              <label className="grid gap-2">
+                <span className="font-mono text-xs font-bold text-foreground">NPM password</span>
+                <input
+                  type="password"
+                  className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </label>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={!options.apiUrl || !email || !password || connectStatus === "connecting"}
+                  onClick={handleConnect}
+                  className="font-mono text-xs border border-accent/35 bg-accent/10 px-4 py-2 text-accent transition hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {connectStatus === "connecting" ? "connecting..." : "connect"}
+                </button>
+                {connectStatus === "error" && (
+                  <span className="font-mono text-xs text-danger">{connectError}</span>
+                )}
+              </div>
+              <p className="font-mono text-[0.62rem] leading-5 text-muted/60">
+                Routeviz fetches a token from NPM. Your password is not stored.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── TraefikConnectorForm ──────────────────────────────────────────────────────
+
+function TraefikConnectorForm({
+  options,
+  onChange,
+}: {
+  options: TraefikConnectorOptions;
+  onChange: (next: TraefikConnectorOptions) => void;
+}) {
+  return (
+    <div className="border border-border/50 bg-panel-2 px-4 py-4 space-y-3">
+      <label className="grid gap-2">
+        <span className="font-mono text-xs font-bold text-foreground">Traefik API URL</span>
+        <input
+          className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
+          value={options.apiUrl}
+          onChange={(e) => onChange({ ...options, apiUrl: e.target.value })}
+          placeholder="http://traefik:8080"
+        />
+      </label>
+      <label className="grid gap-2">
+        <span className="font-mono text-xs font-bold text-foreground">Bearer token <span className="text-muted/50">(optional)</span></span>
+        <input
+          type="password"
+          className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
+          value={options.apiToken}
+          onChange={(e) => onChange({ ...options, apiToken: e.target.value })}
+          placeholder="leave blank if API is unauthenticated"
+        />
+      </label>
+      <p className="font-mono text-[0.62rem] leading-5 text-muted/60">
+        Requires <code className="text-foreground/70">api.insecure=true</code> or a configured API entrypoint.
+      </p>
+    </div>
+  );
+}
+
+// ── ConnectorCard ─────────────────────────────────────────────────────────────
+
+function ConnectorCard({
+  cfg,
+  isOnly,
+  onChange,
+  onRemove,
+  onSave,
+}: {
+  cfg: ConnectorConfig;
+  isOnly: boolean;
+  onChange: (next: ConnectorConfig) => void;
+  onRemove: () => void;
+  onSave?: (updated: ConnectorConfig) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="border border-border/50 bg-panel-2">
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={cfg.enabled}
+              onChange={(e) => onChange({ ...cfg, enabled: e.target.checked })}
+              className="accent-[var(--color-accent)]"
+            />
+          </label>
+          <div className="min-w-0">
+            <span className="font-mono text-xs font-bold text-foreground">{cfg.label}</span>
+            <span className="ml-2 font-mono text-[0.58rem] uppercase tracking-wider text-muted/50">{cfg.type}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/50 hover:text-accent transition border border-border/40 px-2 py-1"
+          >
+            {expanded ? "hide" : "configure"}
+          </button>
+          <button
+            type="button"
+            disabled={isOnly}
+            onClick={onRemove}
+            title={isOnly ? "Cannot remove the only connector" : "Remove connector"}
+            className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/40 hover:text-danger transition border border-border/40 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            remove
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-border/40 px-4 py-4">
+          <label className="grid gap-2 mb-3">
+            <span className="font-mono text-xs font-bold text-foreground">Label</span>
+            <input
+              className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
+              value={cfg.label}
+              onChange={(e) => onChange({ ...cfg, label: e.target.value })}
+            />
+          </label>
+          {cfg.type === "npm" ? (
+            <NpmConnectorForm
+              options={cfg.options as NpmConnectorOptions}
+              onChange={(next) => onChange({ ...cfg, options: next })}
+              onConnect={(next) => onSave?.({ ...cfg, options: next })}
+            />
+          ) : cfg.type === "traefik" ? (
+            <TraefikConnectorForm
+              options={cfg.options as TraefikConnectorOptions}
+              onChange={(next) => onChange({ ...cfg, options: next })}
+            />
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── AddConnectorPicker ────────────────────────────────────────────────────────
+
+const CONNECTOR_DEFS: Array<{ type: "npm" | "traefik"; label: string; description: string }> = [
+  { type: "npm", label: "Nginx Proxy Manager", description: "SQLite or REST API" },
+  { type: "traefik", label: "Traefik", description: "HTTP API" },
+];
+
+function AddConnectorPicker({ onAdd }: { onAdd: (cfg: ConnectorConfig) => void }) {
+  const [open, setOpen] = useState(false);
+
+  function add(type: "npm" | "traefik") {
+    const def = CONNECTOR_DEFS.find((d) => d.type === type)!;
+    const id = `${type}-${Date.now()}`;
+    const cfg: ConnectorConfig =
+      type === "npm"
+        ? { id, type: "npm", label: def.label, enabled: true, options: { mode: "sqlite", sqlitePath: "", apiUrl: "", apiToken: "" } }
+        : { id, type: "traefik", label: def.label, enabled: true, options: { apiUrl: "", apiToken: "" } };
+    onAdd(cfg);
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="font-mono text-xs border border-border/50 bg-panel px-4 py-2 text-muted/70 transition hover:border-accent/35 hover:text-accent"
+      >
+        + add connector
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-10 mt-1 min-w-[220px] border border-border bg-panel shadow-lg">
+          {CONNECTOR_DEFS.map((def) => (
+            <button
+              key={def.type}
+              type="button"
+              onClick={() => add(def.type)}
+              className="w-full px-4 py-3 text-left hover:bg-panel-2 transition"
+            >
+              <div className="font-mono text-xs font-bold text-foreground">{def.label}</div>
+              <div className="mt-0.5 font-mono text-[0.62rem] text-muted/60">{def.description}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── SetupConsole ──────────────────────────────────────────────────────────────
 
 export default function SetupConsole({
   settings,
@@ -62,43 +387,23 @@ export default function SetupConsole({
   connectors: Connector[];
 }) {
   const router = useRouter();
-  const [npmConnectorMode, setNpmConnectorMode] = useState<"sqlite" | "api">(
-    settings.npmConnectorMode ?? "sqlite",
+
+  const [configuredConnectors, setConfiguredConnectors] = useState<ConnectorConfig[]>(
+    settings.connectors,
   );
-  const [npmSqlitePath, setNpmSqlitePath] = useState(settings.npmSqlitePath);
-  const [npmApiUrl, setNpmApiUrl] = useState(settings.npmApiUrl ?? "");
-  const [npmApiToken, setNpmApiToken] = useState(settings.npmApiToken ?? "");
-  const [npmApiEmail, setNpmApiEmail] = useState("");
-  const [npmApiPassword, setNpmApiPassword] = useState("");
-  const [npmConnectStatus, setNpmConnectStatus] = useState<"idle" | "connecting" | "ok" | "error">("idle");
-  const [npmConnectError, setNpmConnectError] = useState("");
-  const [baselineMode, setBaselineMode] = useState<BaselineMode>(
-    settings.dnsBaseline.mode,
-  );
+  const [baselineMode, setBaselineMode] = useState<BaselineMode>(settings.dnsBaseline.mode);
   const [baselineValue, setBaselineValue] = useState(settings.dnsBaseline.value);
-  const [intervalEnabled, setIntervalEnabled] = useState(
-    settings.scanConfig.intervalEnabled,
-  );
-  const [intervalMinutes, setIntervalMinutes] = useState(
-    String(settings.scanConfig.intervalMinutes),
-  );
-  const [driftIntervalDays, setDriftIntervalDays] = useState(
-    String(settings.scanConfig.driftIntervalDays ?? 7),
-  );
-  const [authOverrides, setAuthOverrides] = useState(
-    (settings.authOverrides ?? []).join("\n"),
-  );
-  const [suppressedFindings, setSuppressedFindings] = useState<string[]>(
-    settings.suppressedFindings ?? [],
-  );
+  const [intervalEnabled, setIntervalEnabled] = useState(settings.scanConfig.intervalEnabled);
+  const [intervalMinutes, setIntervalMinutes] = useState(String(settings.scanConfig.intervalMinutes));
+  const [driftIntervalDays, setDriftIntervalDays] = useState(String(settings.scanConfig.driftIntervalDays ?? 7));
+  const [authOverrides, setAuthOverrides] = useState((settings.authOverrides ?? []).join("\n"));
+  const [suppressedFindings, setSuppressedFindings] = useState<string[]>(settings.suppressedFindings ?? []);
   const [webhookEnabled, setWebhookEnabled] = useState(settings.webhookConfig?.enabled ?? false);
   const [webhookUrl, setWebhookUrl] = useState(settings.webhookConfig?.url ?? "");
   const [webhookThreshold, setWebhookThreshold] = useState<"high" | "high_medium">(
     settings.webhookConfig?.severityThreshold ?? "high",
   );
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
-    "idle",
-  );
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
   const readiness = useMemo(() => {
@@ -117,8 +422,7 @@ export default function SetupConsole({
       value: "disabled",
       label: "Off",
       description: "No DNS mismatch alerts",
-      helper:
-        "Routeviz records DNS answers, but it does not compare them against an expected endpoint.",
+      helper: "Routeviz records DNS answers, but it does not compare them against an expected endpoint.",
       example: "Best for most installs when you only want exposure findings.",
       recommended: true,
     },
@@ -126,23 +430,19 @@ export default function SetupConsole({
       value: "reference_hostname",
       label: "DDNS host",
       description: "Compare against one trusted hostname",
-      helper:
-        "Use this when a single DDNS hostname is your source of truth for the expected public endpoint.",
+      helper: "Use this when a single DDNS hostname is your source of truth for the expected public endpoint.",
       example: "Example: edge.example.com or your Synology DDNS hostname.",
     },
     {
       value: "manual_endpoint",
       label: "Fixed IP",
       description: "Compare against one explicit endpoint",
-      helper:
-        "Use this when your expected public IP or endpoint is stable and you want exact mismatch checks.",
+      helper: "Use this when your expected public IP or endpoint is stable and you want exact mismatch checks.",
       example: "Example: 203.0.113.10",
     },
   ];
 
-  const selectedBaselineOption =
-    baselineOptions.find((option) => option.value === baselineMode) ??
-    baselineOptions[0];
+  const selectedBaselineOption = baselineOptions.find((o) => o.value === baselineMode) ?? baselineOptions[0];
 
   const intervalOptions = [
     { value: "0.5", label: "30s", note: "realtime" },
@@ -162,9 +462,7 @@ export default function SetupConsole({
   ];
 
   const retentionWindow = intervalEnabled
-    ? formatRetentionWindow(
-        Number(intervalMinutes) * settings.scanConfig.retentionLimit,
-      )
+    ? formatRetentionWindow(Number(intervalMinutes) * settings.scanConfig.retentionLimit)
     : "manual snapshots only";
 
   const scheduleText = intervalEnabled
@@ -177,12 +475,7 @@ export default function SetupConsole({
     : "History only grows when you run scans manually.";
 
   const baselineStatus =
-    baselineMode === "disabled"
-      ? "Off"
-      : baselineMode === "reference_hostname"
-        ? "DDNS host"
-        : "Fixed IP";
-
+    baselineMode === "disabled" ? "Off" : baselineMode === "reference_hostname" ? "DDNS host" : "Fixed IP";
   const baselineText =
     baselineMode === "disabled"
       ? "DNS mismatch checks are off. Routeviz still records answers it sees."
@@ -191,44 +484,35 @@ export default function SetupConsole({
         : `Comparing public routes against ${baselineValue || "your explicit endpoint"}.`;
 
   const baselineValueLabel =
-    baselineMode === "manual_endpoint"
-      ? "Expected public IP or endpoint"
-      : "Trusted reference hostname";
-  const baselinePlaceholder =
-    baselineMode === "manual_endpoint" ? "203.0.113.10" : "edge.example.com";
+    baselineMode === "manual_endpoint" ? "Expected public IP or endpoint" : "Trusted reference hostname";
+  const baselinePlaceholder = baselineMode === "manual_endpoint" ? "203.0.113.10" : "edge.example.com";
 
-  async function handleNpmConnect() {
-    setNpmConnectStatus("connecting");
-    setNpmConnectError("");
-    try {
-      const res = await fetch("/api/npm-connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: npmApiUrl.trim(), email: npmApiEmail.trim(), password: npmApiPassword }),
-      });
-      const data = await res.json() as { token?: string; error?: string };
-      if (!res.ok || !data.token) {
-        setNpmConnectStatus("error");
-        setNpmConnectError(data.error ?? "Could not connect to NPM.");
-        return;
-      }
-      const token = data.token;
-      setNpmApiToken(token);
-      setNpmConnectStatus("ok");
-      setNpmApiEmail("");
-      setNpmApiPassword("");
-      // Auto-save and trigger scan
-      await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ npmConnectorMode: "api", npmApiUrl: npmApiUrl.trim(), npmApiToken: token }),
-      });
-      fetch("/api/scan", { method: "POST" }).catch(() => null);
-      router.refresh();
-    } catch {
-      setNpmConnectStatus("error");
-      setNpmConnectError("Network error — check the NPM URL.");
-    }
+  function updateConnector(index: number, next: ConnectorConfig) {
+    setConfiguredConnectors((prev) => prev.map((c, i) => (i === index ? next : c)));
+  }
+
+  function removeConnector(index: number) {
+    setConfiguredConnectors((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function addConnector(cfg: ConnectorConfig) {
+    setConfiguredConnectors((prev) => [...prev, cfg]);
+  }
+
+  async function saveWithConnectors(connectors: ConnectorConfig[]) {
+    await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        connectors,
+        dnsBaseline: { mode: baselineMode, value: baselineValue.trim() },
+        scanConfig: { intervalEnabled, intervalMinutes: Number(intervalMinutes), driftIntervalDays: Number(driftIntervalDays) },
+        webhookConfig: { enabled: webhookEnabled, url: webhookUrl.trim(), severityThreshold: webhookThreshold },
+        authOverrides: authOverrides.split("\n").map((s) => s.trim()).filter(Boolean),
+      }),
+    });
+    fetch("/api/scan", { method: "POST" }).catch(() => null);
+    router.refresh();
   }
 
   async function handleSave() {
@@ -238,18 +522,10 @@ export default function SetupConsole({
     try {
       const response = await fetch("/api/settings", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          npmConnectorMode,
-          npmSqlitePath: npmSqlitePath.trim(),
-          npmApiUrl: npmApiUrl.trim(),
-          npmApiToken: npmApiToken.trim(),
-          dnsBaseline: {
-            mode: baselineMode,
-            value: baselineValue.trim(),
-          },
+          connectors: configuredConnectors,
+          dnsBaseline: { mode: baselineMode, value: baselineValue.trim() },
           scanConfig: {
             intervalEnabled,
             intervalMinutes: Number(intervalMinutes),
@@ -260,10 +536,7 @@ export default function SetupConsole({
             url: webhookUrl.trim(),
             severityThreshold: webhookThreshold,
           },
-          authOverrides: authOverrides
-            .split("\n")
-            .map((s) => s.trim())
-            .filter(Boolean),
+          authOverrides: authOverrides.split("\n").map((s) => s.trim()).filter(Boolean),
         }),
       });
 
@@ -275,20 +548,17 @@ export default function SetupConsole({
 
       setStatus("saved");
       router.refresh();
-      window.setTimeout(() => {
-        setStatus("idle");
-      }, 1500);
+      window.setTimeout(() => { setStatus("idle"); }, 1500);
     } catch (error) {
       setStatus("error");
-      setErrorMessage(
-        error instanceof Error ? error.message : "Saving setup failed.",
-      );
+      setErrorMessage(error instanceof Error ? error.message : "Saving setup failed.");
     }
   }
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
       <section className="overflow-hidden border border-border bg-panel">
+        {/* ── Connector status header ── */}
         <div className="border-b border-border px-5 py-4 sm:px-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
@@ -296,9 +566,7 @@ export default function SetupConsole({
                 <span className="text-accent/40 mr-1">▸</span>CONNECTOR_STATUS
               </p>
               <h2 className="mt-2 font-mono text-base font-bold tracking-tight">
-                {readiness
-                  ? "Nothing to change on this host"
-                  : "Connector access needs attention"}
+                {readiness ? "Nothing to change on this host" : "Connector access needs attention"}
               </h2>
               <p className="mt-2 font-mono text-xs leading-6 text-muted/80">
                 {readiness
@@ -306,10 +574,7 @@ export default function SetupConsole({
                   : "Fix connector access first. After that, this page is mostly about optional DNS drift checks and how much local history you want."}
               </p>
             </div>
-            <Badge
-              label={readiness ? "READY" : "NEEDS_ACTION"}
-              tone={readiness ? "success" : "warning"}
-            />
+            <Badge label={readiness ? "READY" : "NEEDS_ACTION"} tone={readiness ? "success" : "warning"} />
           </div>
         </div>
 
@@ -325,9 +590,7 @@ export default function SetupConsole({
                 </div>
                 <div className="flex items-center gap-2 font-mono text-[0.62rem] uppercase tracking-wider text-muted/70">
                   <span
-                    className={`h-1.5 w-1.5 ${
-                      connector.requiresAction ? "bg-warning" : "bg-success"
-                    }`}
+                    className={`h-1.5 w-1.5 ${connector.requiresAction ? "bg-warning" : "bg-success"}`}
                     style={connector.requiresAction
                       ? { boxShadow: "0 0 5px rgba(255,184,0,0.5)" }
                       : { boxShadow: "0 0 5px rgba(57,255,122,0.5)" }}
@@ -344,137 +607,41 @@ export default function SetupConsole({
 
         <div className="px-5 py-5 sm:px-6">
           <div className="border border-border/60 divide-y divide-border/50">
+
+            {/* ── Connectors config ── */}
             <section className="grid gap-5 px-4 py-5 sm:px-5 lg:grid-cols-[210px_minmax(0,1fr)]">
               <div>
                 <p className="font-mono text-[0.62rem] uppercase tracking-[0.22em] text-muted/70">
-                  NPM_CONNECTOR
+                  CONNECTORS
                 </p>
                 <h3 className="mt-2 font-mono text-sm font-bold text-foreground">
-                  Proxy source
+                  Proxy sources
                 </h3>
                 <p className="mt-2 font-mono text-xs leading-6 text-muted/80">
-                  SQLite requires the NPM data directory bind-mounted into the container. Use API mode if NPM runs on a different host.
+                  Each connector pulls routes from a different source. SQLite requires the NPM data directory bind-mounted. Use API mode for remote hosts.
                 </p>
               </div>
 
               <div className="min-w-0 space-y-3">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {(["sqlite", "api"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setNpmConnectorMode(mode)}
-                      className={`min-w-0 border px-4 py-3 text-left transition ${
-                        npmConnectorMode === mode
-                          ? "border-accent/45 bg-panel-2 shadow-[inset_3px_0_0_0_var(--color-accent)]"
-                          : "border-border/50 bg-panel hover:border-accent/25"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-mono text-xs font-bold text-foreground">
-                          {mode === "sqlite" ? "SQLite (local)" : "API (remote)"}
-                        </span>
-                        {mode === "sqlite" ? (
-                          <span className="font-mono text-[0.58rem] uppercase tracking-wider border border-success/30 bg-success/10 px-1.5 py-0.5 text-success">
-                            default
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="mt-1.5 font-mono text-[0.62rem] leading-5 text-muted/70">
-                        {mode === "sqlite" ? "Read directly from the bind-mounted SQLite file" : "Fetch routes via the NPM REST API"}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                {npmConnectorMode === "sqlite" ? (
-                  <div className="border border-border/50 bg-panel-2 px-4 py-4 space-y-3">
-                    <label className="grid gap-2">
-                      <span className="font-mono text-xs font-bold text-foreground">
-                        SQLite path
-                      </span>
-                      <input
-                        className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
-                        value={npmSqlitePath}
-                        onChange={(e) => setNpmSqlitePath(e.target.value)}
-                        placeholder="/npm-data/database.sqlite"
-                      />
-                    </label>
-                    <p className="font-mono text-[0.62rem] leading-5 text-muted/60">
-                      Mount the NPM data directory as <code className="text-foreground/70">/npm-data:ro</code> in docker-compose.yml.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="border border-border/50 bg-panel-2 px-4 py-4 space-y-3">
-                    <label className="grid gap-2">
-                      <span className="font-mono text-xs font-bold text-foreground">NPM base URL</span>
-                      <input
-                        className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
-                        value={npmApiUrl}
-                        onChange={(e) => { setNpmApiUrl(e.target.value); setNpmConnectStatus("idle"); }}
-                        placeholder="http://192.168.1.10:81"
-                      />
-                    </label>
-
-                    {npmConnectStatus === "ok" || (npmApiToken && npmConnectStatus === "idle") ? (
-                      <div className="flex items-center justify-between border border-success/20 bg-success/5 px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs text-success">✓ connected</span>
-                          <span className="font-mono text-[0.62rem] text-muted/50">Token active</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => { setNpmConnectStatus("idle"); setNpmApiToken(""); setNpmApiEmail(""); setNpmApiPassword(""); }}
-                          className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/50 hover:text-accent transition border border-border/40 px-2 py-1"
-                        >
-                          refresh token
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <label className="grid gap-2">
-                          <span className="font-mono text-xs font-bold text-foreground">NPM email</span>
-                          <input
-                            type="email"
-                            className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
-                            value={npmApiEmail}
-                            onChange={(e) => setNpmApiEmail(e.target.value)}
-                            placeholder="admin@example.com"
-                          />
-                        </label>
-                        <label className="grid gap-2">
-                          <span className="font-mono text-xs font-bold text-foreground">NPM password</span>
-                          <input
-                            type="password"
-                            className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
-                            value={npmApiPassword}
-                            onChange={(e) => setNpmApiPassword(e.target.value)}
-                            placeholder="••••••••"
-                          />
-                        </label>
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            disabled={!npmApiUrl || !npmApiEmail || !npmApiPassword || npmConnectStatus === "connecting"}
-                            onClick={handleNpmConnect}
-                            className="font-mono text-xs border border-accent/35 bg-accent/10 px-4 py-2 text-accent transition hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            {npmConnectStatus === "connecting" ? "connecting..." : "connect"}
-                          </button>
-                          {npmConnectStatus === "error" && (
-                            <span className="font-mono text-xs text-danger">{npmConnectError}</span>
-                          )}
-                        </div>
-                        <p className="font-mono text-[0.62rem] leading-5 text-muted/60">
-                          Routeviz fetches a token from NPM. Your password is not stored.
-                        </p>
-                      </>
-                    )}
-                  </div>
-                )}
+                {configuredConnectors.map((cfg, i) => (
+                  <ConnectorCard
+                    key={cfg.id}
+                    cfg={cfg}
+                    isOnly={configuredConnectors.length === 1}
+                    onChange={(next) => updateConnector(i, next)}
+                    onRemove={() => removeConnector(i)}
+                    onSave={(updated) => {
+                      const next = configuredConnectors.map((c, j) => (j === i ? updated : c));
+                      setConfiguredConnectors(next);
+                      saveWithConnectors(next);
+                    }}
+                  />
+                ))}
+                <AddConnectorPicker onAdd={addConnector} />
               </div>
             </section>
 
+            {/* ── DNS drift checks ── */}
             <section className="grid gap-5 px-4 py-5 sm:px-5 lg:grid-cols-[210px_minmax(0,1fr)]">
               <div>
                 <p className="font-mono text-[0.62rem] uppercase tracking-[0.22em] text-muted/70">
@@ -484,17 +651,12 @@ export default function SetupConsole({
                   Optional
                 </h3>
                 <p className="mt-2 font-mono text-xs leading-6 text-muted/80">
-                  Leave this off unless you want alerts when public DNS resolves
-                  somewhere unexpected.
+                  Leave this off unless you want alerts when public DNS resolves somewhere unexpected.
                 </p>
               </div>
 
               <div className="min-w-0 space-y-3">
-                <div
-                  role="radiogroup"
-                  aria-label="DNS baseline mode"
-                  className="grid gap-2 sm:grid-cols-3"
-                >
+                <div role="radiogroup" aria-label="DNS baseline mode" className="grid gap-2 sm:grid-cols-3">
                   {baselineOptions.map((option) => (
                     <button
                       key={option.value}
@@ -507,9 +669,7 @@ export default function SetupConsole({
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <span className="font-mono text-xs font-bold text-foreground">
-                          {option.label}
-                        </span>
+                        <span className="font-mono text-xs font-bold text-foreground">{option.label}</span>
                         {option.recommended ? (
                           <span className="font-mono text-[0.58rem] uppercase tracking-wider border border-success/30 bg-success/10 px-1.5 py-0.5 text-success">
                             default
@@ -538,8 +698,7 @@ export default function SetupConsole({
 
                   {baselineMode === "disabled" ? (
                     <p className="mt-2 font-mono text-xs leading-6 text-foreground/80">
-                      Routeviz will keep recording DNS answers, but it will not open
-                      mismatch findings from them.
+                      Routeviz will keep recording DNS answers, but it will not open mismatch findings from them.
                     </p>
                   ) : (
                     <div className="mt-4 grid gap-3">
@@ -550,7 +709,7 @@ export default function SetupConsole({
                         <input
                           className="min-h-10 min-w-0 border border-border/70 bg-background px-4 font-mono text-xs text-foreground outline-none transition focus:border-accent/50 focus:shadow-[0_0_8px_rgba(57,255,122,0.12)] placeholder:text-muted/40"
                           value={baselineValue}
-                          onChange={(event) => setBaselineValue(event.target.value)}
+                          onChange={(e) => setBaselineValue(e.target.value)}
                           placeholder={baselinePlaceholder}
                         />
                       </label>
@@ -563,6 +722,7 @@ export default function SetupConsole({
               </div>
             </section>
 
+            {/* ── Snapshot history ── */}
             <section className="grid gap-5 px-4 py-5 sm:px-5 lg:grid-cols-[210px_minmax(0,1fr)]">
               <div>
                 <p className="font-mono text-[0.62rem] uppercase tracking-[0.22em] text-muted/70">
@@ -572,8 +732,7 @@ export default function SetupConsole({
                   Local history
                 </h3>
                 <p className="mt-2 font-mono text-xs leading-6 text-muted/80">
-                  Five minutes is the default. Change this only if you want denser
-                  debugging history or less background scanning.
+                  Five minutes is the default. Change this only if you want denser debugging history or less background scanning.
                 </p>
               </div>
 
@@ -584,7 +743,7 @@ export default function SetupConsole({
                       type="checkbox"
                       className="accent-[var(--color-accent)]"
                       checked={intervalEnabled}
-                      onChange={(event) => setIntervalEnabled(event.target.checked)}
+                      onChange={(e) => setIntervalEnabled(e.target.checked)}
                     />
                     Enable recurring snapshots
                   </label>
@@ -606,9 +765,7 @@ export default function SetupConsole({
                           : "border-border/50 bg-panel hover:border-accent/25"
                       }`}
                     >
-                      <div className="font-mono text-xs font-bold text-foreground">
-                        {option.label}
-                      </div>
+                      <div className="font-mono text-xs font-bold text-foreground">{option.label}</div>
                       <div className="mt-1 font-mono text-[0.6rem] text-muted/60">{option.note}</div>
                     </button>
                   ))}
@@ -840,6 +997,7 @@ export default function SetupConsole({
         </div>
       </section>
 
+      {/* ── Sidebar ── */}
       <aside className="space-y-4">
         <section className="overflow-hidden border border-border bg-panel">
           <div className="border-b border-border/60 px-4 py-2.5">
@@ -849,29 +1007,17 @@ export default function SetupConsole({
           </div>
           <div className="divide-y divide-border/50">
             <div className="px-4 py-3">
-              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
-                dns_checks
-              </div>
-              <div className="mt-1 font-mono text-xs font-bold text-foreground">
-                {baselineStatus}
-              </div>
+              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">dns_checks</div>
+              <div className="mt-1 font-mono text-xs font-bold text-foreground">{baselineStatus}</div>
               <div className="mt-1.5 font-mono text-xs leading-6 text-muted/80">{baselineText}</div>
             </div>
             <div className="px-4 py-3">
-              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
-                snapshot_cadence
-              </div>
-              <div className="mt-1 font-mono text-xs font-bold text-foreground">
-                {scheduleText}
-              </div>
-              <div className="mt-1.5 font-mono text-xs leading-6 text-muted/80">
-                {scheduleDetail}
-              </div>
+              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">snapshot_cadence</div>
+              <div className="mt-1 font-mono text-xs font-bold text-foreground">{scheduleText}</div>
+              <div className="mt-1.5 font-mono text-xs leading-6 text-muted/80">{scheduleDetail}</div>
             </div>
             <div className="px-4 py-3">
-              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
-                retention_limit
-              </div>
+              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">retention_limit</div>
               <div className="mt-1 font-mono text-xs font-bold text-foreground">
                 {settings.scanConfig.retentionLimit} snapshots
               </div>
@@ -880,22 +1026,22 @@ export default function SetupConsole({
               </div>
             </div>
             <div className="px-4 py-3">
-              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
-                docker_socket
-              </div>
+              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">docker_socket</div>
               <div className="mt-2 break-all border border-border/50 bg-panel-2 px-3 py-2 font-mono text-[0.65rem] leading-6 text-foreground/85">
                 {settings.dockerSocketPath}
               </div>
             </div>
             <div className="px-4 py-3">
-              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">
-                npm_connector
-              </div>
-              <div className="mt-1 font-mono text-xs font-bold text-foreground">
-                {npmConnectorMode === "api" ? "API (remote)" : "SQLite (local)"}
-              </div>
-              <div className="mt-2 break-all border border-border/50 bg-panel-2 px-3 py-2 font-mono text-[0.65rem] leading-6 text-foreground/85">
-                {npmConnectorMode === "api" ? (npmApiUrl || "—") : npmSqlitePath}
+              <div className="font-mono text-[0.62rem] uppercase tracking-wider text-muted/60">connectors</div>
+              <div className="mt-2 space-y-1">
+                {configuredConnectors.map((cfg) => (
+                  <div key={cfg.id} className="flex items-center justify-between gap-2 border border-border/50 bg-panel-2 px-3 py-2">
+                    <span className="font-mono text-[0.65rem] text-foreground/85 truncate">{cfg.label}</span>
+                    <span className={`font-mono text-[0.58rem] uppercase tracking-wider ${cfg.enabled ? "text-success" : "text-muted/40"}`}>
+                      {cfg.enabled ? "on" : "off"}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

@@ -161,7 +161,7 @@ export function parseDomainNames(value: string): string[] {
   }
 }
 
-export function dedupeRoutes(rows: NpmRow[]): EdgeRouteInput[] {
+export function dedupeRoutes(rows: NpmRow[], connectorId = "npm"): EdgeRouteInput[] {
   const groups = new Map<string, NpmRow[]>();
 
   for (const row of rows) {
@@ -191,6 +191,7 @@ export function dedupeRoutes(rows: NpmRow[]): EdgeRouteInput[] {
         sourceType: "npm",
         sourceName: "Nginx Proxy Manager",
         sourceId: String(canonical.id),
+        connectorId,
         domains,
         targetHost: canonical.forward_host,
         targetPort: canonical.forward_port,

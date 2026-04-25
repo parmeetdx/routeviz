@@ -4,6 +4,7 @@ export type EdgeRouteInput = {
   sourceType: ProxySourceType;
   sourceName: string;
   sourceId: string;
+  connectorId: string;
   domains: string[];
   targetHost: string;
   targetPort: number;
@@ -225,14 +226,37 @@ export interface WebhookConfig {
   lastDeliveryStatus: "success" | "failed" | null;
 }
 
+export type ConnectorType = "npm" | "traefik";
+
+export interface NpmConnectorOptions {
+  mode: "sqlite" | "api";
+  sqlitePath: string;
+  apiUrl: string;
+  apiToken: string;
+  apiEmail?: string;
+  apiPassword?: string;
+}
+
+export interface TraefikConnectorOptions {
+  apiUrl: string;
+  apiToken: string;
+}
+
+export type ConnectorOptions = NpmConnectorOptions | TraefikConnectorOptions;
+
+export interface ConnectorConfig {
+  id: string;
+  type: ConnectorType;
+  label: string;
+  enabled: boolean;
+  options: NpmConnectorOptions | TraefikConnectorOptions;
+}
+
 export interface PersistedSettings {
   dockerSocketPath: string;
   hostAddress: string | null;
   hostLabel: string;
-  npmConnectorMode: "sqlite" | "api";
-  npmSqlitePath: string;
-  npmApiUrl: string;
-  npmApiToken: string;
+  connectors: ConnectorConfig[];
   dnsBaseline: {
     mode: DnsBaselineMode;
     value: string;

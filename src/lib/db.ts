@@ -4,6 +4,7 @@ import path from "node:path";
 import { Pool } from "pg";
 
 import type { ExposureIntent, ExposureIntentMode, RoutevizSnapshot, PersistedSettings } from "./routeviz-types";
+import { normalizeSettings } from "./settings";
 
 // ── Connection pool ────────────────────────────────────────────────────────────
 
@@ -34,6 +35,8 @@ const MIGRATION_FILES = [
   "004_interval_minutes_numeric.sql",
   "005_scan_request.sql",
   "006_exposure_intents.sql",
+  "007_drift_interval.sql",
+  "008_connectors_json.sql",
 ];
 
 export async function runMigrations(): Promise<void> {
@@ -96,19 +99,23 @@ type SettingsRow = {
   webhook_last_delivery_at: string | null;
   webhook_last_delivery_status: string | null;
   auth_overrides: string[];
+  connectors_json: unknown | null;
 };
 
 export function rowToSettings(row: SettingsRow): PersistedSettings {
-  return {
+  return normalizeSettings({
     dockerSocketPath: row.docker_socket_path,
     hostAddress: row.host_address,
     hostLabel: row.host_label,
-    npmConnectorMode: row.npm_connector_mode === "api" ? "api" : "sqlite",
+    // Prefer connectors_json (source of truth) over legacy flat NPM columns.
+    // migrateConnectors() in normalizeSettings handles the fallback when it's null.
+    connectors: row.connectors_json ?? undefined,
+    npmConnectorMode: row.npm_connector_mode,
     npmSqlitePath: row.npm_sqlite_path,
     npmApiUrl: row.npm_api_url ?? "",
     npmApiToken: row.npm_api_token ?? "",
     dnsBaseline: {
-      mode: row.dns_baseline_mode as PersistedSettings["dnsBaseline"]["mode"],
+      mode: row.dns_baseline_mode,
       value: row.dns_baseline_value,
     },
     scanConfig: {
@@ -120,13 +127,12 @@ export function rowToSettings(row: SettingsRow): PersistedSettings {
     webhookConfig: {
       enabled: row.webhook_enabled,
       url: row.webhook_url,
-      severityThreshold: row.webhook_severity_threshold as "high" | "high_medium",
+      severityThreshold: row.webhook_severity_threshold,
       lastDeliveryAt: row.webhook_last_delivery_at,
-      lastDeliveryStatus: row.webhook_last_delivery_status as "success" | "failed" | null,
+      lastDeliveryStatus: row.webhook_last_delivery_status,
     },
     authOverrides: row.auth_overrides ?? [],
-    suppressedFindings: [],
-  };
+  });
 }
 
 export async function dbGetSettings(): Promise<PersistedSettings | null> {
@@ -137,6 +143,15 @@ export async function dbGetSettings(): Promise<PersistedSettings | null> {
 
 export async function dbUpsertSettings(settings: PersistedSettings): Promise<void> {
   const pool = getPool();
+  // Persist the first NPM connector's options into the legacy flat columns so
+  // older DB rows remain readable by migrateConnectors() on next read.
+  const npmCfg = settings.connectors.find((c) => c.type === "npm");
+  const npmOpts = npmCfg?.options as { mode?: string; sqlitePath?: string; apiUrl?: string; apiToken?: string } | undefined;
+  const npmMode = npmOpts?.mode ?? "sqlite";
+  const npmSqlitePath = npmOpts?.sqlitePath ?? "";
+  const npmApiUrl = npmOpts?.apiUrl ?? "";
+  const npmApiToken = npmOpts?.apiToken ?? "";
+
   await pool.query(
     `insert into settings (
       id, docker_socket_path, host_address, host_label,
@@ -145,8 +160,8 @@ export async function dbUpsertSettings(settings: PersistedSettings): Promise<voi
       scan_interval_enabled, scan_interval_minutes, scan_retention_limit, drift_interval_days,
       webhook_enabled, webhook_url, webhook_severity_threshold,
       webhook_last_delivery_at, webhook_last_delivery_status,
-      auth_overrides, updated_at
-    ) values (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, now())
+      auth_overrides, connectors_json, updated_at
+    ) values (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, now())
     on conflict (id) do update set
       docker_socket_path = excluded.docker_socket_path,
       host_address = excluded.host_address,
@@ -167,15 +182,16 @@ export async function dbUpsertSettings(settings: PersistedSettings): Promise<voi
       webhook_last_delivery_at = excluded.webhook_last_delivery_at,
       webhook_last_delivery_status = excluded.webhook_last_delivery_status,
       auth_overrides = excluded.auth_overrides,
+      connectors_json = excluded.connectors_json,
       updated_at = now()`,
     [
       settings.dockerSocketPath,
       settings.hostAddress,
       settings.hostLabel,
-      settings.npmConnectorMode,
-      settings.npmSqlitePath,
-      settings.npmApiUrl,
-      settings.npmApiToken,
+      npmMode,
+      npmSqlitePath,
+      npmApiUrl,
+      npmApiToken,
       settings.dnsBaseline.mode,
       settings.dnsBaseline.value,
       settings.scanConfig.intervalEnabled,
@@ -188,6 +204,7 @@ export async function dbUpsertSettings(settings: PersistedSettings): Promise<voi
       settings.webhookConfig.lastDeliveryAt,
       settings.webhookConfig.lastDeliveryStatus,
       settings.authOverrides,
+      JSON.stringify(settings.connectors),
     ],
   );
 }

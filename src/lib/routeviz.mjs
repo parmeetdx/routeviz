@@ -54,15 +54,15 @@ export function createFallbackSnapshot(settings, message = "Waiting for the firs
         hint: message,
         details: `Expected read access to ${settings.dockerSocketPath}.`,
       },
-      {
-        id: "npm",
-        label: "Nginx Proxy Manager",
+      ...(settings.connectors ?? []).map((cfg) => ({
+        id: cfg.id,
+        label: cfg.label,
         kind: "reverse_proxy",
         status: "degraded",
         requiresAction: true,
         hint: "No route snapshot is available yet.",
-        details: `Expected a readable SQLite file at ${settings.npmSqlitePath}.`,
-      },
+        details: `Connector ${cfg.label} has not produced a snapshot yet.`,
+      })),
       {
         id: "dns",
         label: "DNS lookups",
