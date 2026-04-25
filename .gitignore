@@ -23,9 +23,8 @@
 # misc
 .DS_Store
 ._*
-.ops-ledger/
 .routeviz/
-.netcanary/
+.ops-ledger/
 *.pem
 
 # local dev logs
@@ -39,6 +38,11 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+
+# AI agent instructions (project-internal, not useful to contributors)
+CLAUDE.md
+AGENTS.md
+.codex/
 
 # vercel
 .vercel

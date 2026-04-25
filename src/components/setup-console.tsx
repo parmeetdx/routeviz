@@ -330,21 +330,22 @@ function ConnectorCard({
 
 // ── AddConnectorPicker ────────────────────────────────────────────────────────
 
-const CONNECTOR_DEFS: Array<{ type: "npm" | "traefik"; label: string; description: string }> = [
+const CONNECTOR_DEFS: Array<{ type: "npm"; label: string; description: string }> = [
   { type: "npm", label: "Nginx Proxy Manager", description: "SQLite or REST API" },
-  { type: "traefik", label: "Traefik", description: "HTTP API" },
+];
+
+const CONNECTOR_COMING_SOON = [
+  { label: "Traefik", description: "HTTP API — coming soon" },
+  { label: "Caddy", description: "Admin API — planned" },
 ];
 
 function AddConnectorPicker({ onAdd }: { onAdd: (cfg: ConnectorConfig) => void }) {
   const [open, setOpen] = useState(false);
 
-  function add(type: "npm" | "traefik") {
+  function add(type: "npm") {
     const def = CONNECTOR_DEFS.find((d) => d.type === type)!;
     const id = `${type}-${Date.now()}`;
-    const cfg: ConnectorConfig =
-      type === "npm"
-        ? { id, type: "npm", label: def.label, enabled: true, options: { mode: "sqlite", sqlitePath: "", apiUrl: "", apiToken: "" } }
-        : { id, type: "traefik", label: def.label, enabled: true, options: { apiUrl: "", apiToken: "" } };
+    const cfg: ConnectorConfig = { id, type: "npm", label: def.label, enabled: true, options: { mode: "sqlite", sqlitePath: "", apiUrl: "", apiToken: "" } };
     onAdd(cfg);
     setOpen(false);
   }
@@ -370,6 +371,12 @@ function AddConnectorPicker({ onAdd }: { onAdd: (cfg: ConnectorConfig) => void }
               <div className="font-mono text-xs font-bold text-foreground">{def.label}</div>
               <div className="mt-0.5 font-mono text-[0.62rem] text-muted/60">{def.description}</div>
             </button>
+          ))}
+          {CONNECTOR_COMING_SOON.map((def) => (
+            <div key={def.label} className="w-full px-4 py-3 opacity-40 cursor-not-allowed">
+              <div className="font-mono text-xs font-bold text-foreground">{def.label}</div>
+              <div className="mt-0.5 font-mono text-[0.62rem] text-muted/60">{def.description}</div>
+            </div>
           ))}
         </div>
       )}

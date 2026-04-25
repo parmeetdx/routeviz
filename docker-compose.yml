@@ -28,7 +28,9 @@ services:
       HOST_ADDRESS: ${HOST_ADDRESS:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ${NPM_DATA_PATH:-/opt/nginx-proxy-manager/data}:/npm-data:ro
+      # NPM SQLite mode only: set NPM_DATA_PATH in .env to your NPM data directory.
+      # API mode users can leave this unset — the mount is ignored.
+      - ${NPM_DATA_PATH:-/tmp}:/npm-data:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,7 +49,9 @@ services:
       HOST_ADDRESS: ${HOST_ADDRESS:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ${NPM_DATA_PATH:-/opt/nginx-proxy-manager/data}:/npm-data:ro
+      # NPM SQLite mode only: set NPM_DATA_PATH in .env to your NPM data directory.
+      # API mode users can leave this unset — the mount is ignored.
+      - ${NPM_DATA_PATH:-/tmp}:/npm-data:ro
     depends_on:
       postgres:
         condition: service_healthy

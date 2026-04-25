@@ -1,7 +1,14 @@
 {
   "name": "routeviz",
   "version": "0.1.0",
-  "private": true,
+  "description": "Self-hosted exposure chain monitor for homelabs and self-hosted stacks",
+  "license": "MIT",
+  "homepage": "https://github.com/parmeetdx/routeviz",
+  "bugs": "https://github.com/parmeetdx/routeviz/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/parmeetdx/routeviz.git"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

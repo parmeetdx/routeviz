@@ -157,7 +157,7 @@ export default function LandingPage() {
             </span>
           </div>
           <div className="flex items-center gap-5">
-            <a href="https://github.com/parmeetdx/netcanary" target="_blank" rel="noopener noreferrer"
+            <a href="https://github.com/parmeetdx/routeviz" target="_blank" rel="noopener noreferrer"
               className="text-[0.58rem] uppercase tracking-widest text-muted/55 transition hover:text-accent/80">
               github
             </a>
@@ -211,7 +211,7 @@ export default function LandingPage() {
                   » install in 60s
                 </Link>
                 <a
-                  href="https://github.com/parmeetdx/netcanary"
+                  href="https://github.com/parmeetdx/routeviz"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="border border-border/50 bg-panel px-5 py-2.5 text-[0.65rem] uppercase tracking-widest text-muted/55 transition hover:border-accent/30 hover:text-muted/85"
@@ -416,7 +416,7 @@ export default function LandingPage() {
                   » open dashboard
                 </Link>
                 <a
-                  href="https://github.com/parmeetdx/netcanary"
+                  href="https://github.com/parmeetdx/routeviz"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="border border-border/50 bg-panel px-5 py-2.5 text-[0.65rem] uppercase tracking-widest text-muted/55 transition hover:border-accent/30 hover:text-muted/85"
@@ -490,7 +490,7 @@ export default function LandingPage() {
               » open dashboard
             </Link>
             <a
-              href="https://github.com/parmeetdx/netcanary"
+              href="https://github.com/parmeetdx/routeviz"
               target="_blank"
               rel="noopener noreferrer"
               className="border border-border/50 px-8 py-3.5 text-[0.65rem] uppercase tracking-widest text-muted/50 transition hover:border-accent/25 hover:text-muted/80"
@@ -516,7 +516,7 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="flex gap-5 text-[0.55rem] uppercase tracking-widest text-muted/40">
-            <a href="https://github.com/parmeetdx/netcanary" target="_blank" rel="noopener noreferrer"
+            <a href="https://github.com/parmeetdx/routeviz" target="_blank" rel="noopener noreferrer"
               className="transition hover:text-accent/60">github</a>
             <Link href="/overview" className="transition hover:text-accent/60">dashboard</Link>
           </div>
