@@ -84,9 +84,7 @@ export function matchesUserOverrides(route: RouteRecord, overrides: string[]): b
 }
 
 export function hasAuthLayer(route: RouteRecord): boolean {
-  if (route.npmAccessListId != null && route.npmAccessListId !== 0) return true;
-  const advancedConfig = (route.npmAdvancedConfig ?? "").toLowerCase();
-  if (advancedConfig.includes("auth_request") || advancedConfig.includes("authelia") || advancedConfig.includes("authentik")) return true;
+  if ((route.authSignals ?? []).length > 0) return true;
   const haystack = route.relatedWorkloads.flatMap((w) => [w.name, w.image]).join(" ").toLowerCase();
   if (AUTH_TOKENS.some((token) => haystack.includes(token))) return true;
   return route.selfAuthDetected;
@@ -149,7 +147,7 @@ function pushIntentFindings(
     drift.push({
       severity: "high",
       title: `${route.entrypoint} is missing required auth`,
-      evidence: "This route was marked as requiring an auth layer, but no NPM access list, forward-auth, or self-auth signal is currently detected.",
+      evidence: "This route was marked as requiring an auth layer, but no access list, forward-auth, or self-auth signal is currently detected.",
       nextCheck: "Restore the auth layer or update the exposure intent.",
     });
   }
@@ -207,10 +205,10 @@ export function createFindings(
     pushIntentFindings(findings, route, intent, suppressed, driftIntervalDays);
 
     if (route.matchState === "ambiguous") {
-      pushFinding(findings, route, "ambiguous_target", "high", `${route.entrypoint} has multiple plausible workloads`, route.notes, "Tighten the NPM target or Docker network aliases so the route resolves to a single workload.", suppressed);
+      pushFinding(findings, route, "ambiguous_target", "high", `${route.entrypoint} has multiple plausible workloads`, route.notes, "Tighten the proxy target or Docker network aliases so the route resolves to a single workload.", suppressed);
     }
     if (route.matchState === "unmatched") {
-      pushFinding(findings, route, "unmatched_target", "high", `${route.entrypoint} does not map to a live local workload`, route.notes, "Confirm the target port is still published or update the proxy host to the current service endpoint.", suppressed);
+      pushFinding(findings, route, "unmatched_target", "high", `${route.entrypoint} does not map to a live local workload`, route.notes, "Confirm the target port is still published or update the proxy route to the current service endpoint.", suppressed);
     }
     if (route.matchState === "off_host") {
       pushFinding(findings, route, "off_host_target", "medium", `${route.entrypoint} forwards outside the scanned Docker host`, route.notes, "Keep it if the off-host dependency is intentional, otherwise bring the route back onto this host or document the dependency.", suppressed);
@@ -219,7 +217,7 @@ export function createFindings(
       pushFinding(findings, route, "host_mode_inference", "medium", `${route.entrypoint} relies on host-network inference`, route.notes, "Prefer explicit container alias or published-port targeting if you want this route to stay easy to verify.", suppressed);
     }
     if (route.duplicateDomainCount > 1) {
-      pushFinding(findings, route, "duplicate_proxy_host", "high", `${route.entrypoint} exists in ${route.duplicateDomainCount} enabled proxy host records`, `Multiple active NPM rows resolve to ${route.target}. Routeviz kept the most recently modified record for the main route view.`, "Archive or delete the extra proxy host records before one of them drifts silently.", suppressed);
+      pushFinding(findings, route, "duplicate_proxy_host", "high", `${route.entrypoint} exists in ${route.duplicateDomainCount} enabled proxy host records`, `Multiple active proxy host records resolve to ${route.target}. Routeviz kept the most recently modified record for the main route view.`, "Archive or delete the extra proxy host records before one of them drifts silently.", suppressed);
     }
     if (route.sharedTargetCount > 1) {
       pushFinding(findings, route, "shared_forward_target", route.sharedTargetCount >= 3 ? "medium" : "low", `${route.sharedTargetCount} routes share ${route.target}`, `This entrypoint shares the same forward target as ${route.sharedTargetCount - 1} other route${route.sharedTargetCount === 2 ? "" : "s"}.`, "Confirm every extra hostname is intentional. This is often where stale domains hide.", suppressed);
@@ -246,7 +244,7 @@ export function createFindings(
       if (!intentHandlesAuthFinding(intent, mgmt)) {
         pushFinding(findings, route, mgmt ? "management_surface" : "no_auth_layer", mgmt ? "high" : "medium",
           mgmt ? `${route.entrypoint} is a public management surface with no auth` : `${route.entrypoint} has no auth layer detected`,
-          mgmt ? `${route.workloadLabel} looks like an operational console with no NPM access list or forward-auth found.` : "No NPM access list configured and no Authelia/Authentik/oauth2-proxy found in the compose stack.",
+          mgmt ? `${route.workloadLabel} looks like an operational console with no access list or forward-auth found.` : "No access list configured and no Authelia/Authentik/oauth2-proxy found in the compose stack.",
           "Add Authelia, Authentik, or an NPM access list, or confirm public access is intentional.",
           suppressed,
         );
