@@ -29,7 +29,7 @@ export function ConsolePage({
   children: ReactNode;
 }) {
   const navItems = [
-    { href: "/", label: "overview", active: eyebrow === "Overview" },
+    { href: "/overview", label: "overview", active: eyebrow === "Overview" },
     { href: "/setup", label: "setup", active: eyebrow === "Setup" },
     { href: "/routes", label: "routes", active: eyebrow === "Routes" },
     { href: "/findings", label: "findings", active: eyebrow === "Findings" },
@@ -42,7 +42,7 @@ export function ConsolePage({
         <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3 px-5 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-7">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-8">
             {/* Logo / brand */}
-            <Link href="/" className="flex items-center gap-2 select-none">
+            <Link href="/overview" className="flex items-center gap-2 select-none">
               <span className="font-mono text-accent text-lg font-bold tracking-widest" style={{ textShadow: "0 0 12px rgba(57,255,122,0.6)" }}>
                 ROUTEVIZ
               </span>
