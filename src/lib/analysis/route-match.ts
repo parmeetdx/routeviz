@@ -2,9 +2,8 @@ import net from "node:net";
 import http from "node:http";
 import https from "node:https";
 
-import type { ConfidenceLevel, PersistedSettings, RelatedWorkload, RouteMatchState, RouteRecord, WorkloadRecord } from "@/lib/routeviz-types";
+import type { ConfidenceLevel, EdgeRouteInput, PersistedSettings, RelatedWorkload, RouteMatchState, RouteRecord, WorkloadRecord } from "@/lib/routeviz-types";
 import type { DockerWorkload } from "@/lib/collectors/docker";
-import type { CanonicalRoute } from "@/lib/collectors/npm";
 
 export type MatchResult = {
   matchState: RouteMatchState;
@@ -14,7 +13,7 @@ export type MatchResult = {
   notes: string;
 };
 
-export function getPrimaryDomain(route: CanonicalRoute): string | null {
+export function getPrimaryDomain(route: EdgeRouteInput): string | null {
   return route.domains[0] ?? null;
 }
 
@@ -78,6 +77,7 @@ export function isHostLikeTarget(target: string, settings: PersistedSettings, ho
   );
 }
 
+/* v8 ignore next 17 */
 export function probeTcpPort(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = new net.Socket();
@@ -96,6 +96,7 @@ export function probeTcpPort(host: string, port: number, timeoutMs = 1500): Prom
   });
 }
 
+/* v8 ignore next 71 */
 export function probeHttpAuth(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
   return new Promise((resolve) => {
     const probeHost = host === "0.0.0.0" ? "127.0.0.1" : host;
@@ -168,14 +169,21 @@ export function probeHttpAuth(host: string, port: number, timeoutMs = 2000): Pro
   });
 }
 
+export type ProbeOverrides = {
+  tcpProbe?: (host: string, port: number) => Promise<boolean>;
+  httpAuthProbe?: (host: string, port: number) => Promise<boolean>;
+};
+
 export async function matchRouteToWorkload(
-  route: CanonicalRoute,
+  route: EdgeRouteInput,
   workloads: DockerWorkload[],
   settings: PersistedSettings,
   hostCandidates: Set<string>,
+  _probes: ProbeOverrides = {},
 ): Promise<MatchResult> {
-  const targetHost = route.row.forward_host;
-  const targetPort = Number(route.row.forward_port);
+  const tcpProbe = _probes.tcpProbe ?? probeTcpPort;
+  const targetHost = route.targetHost;
+  const targetPort = route.targetPort;
   const hostLike = isHostLikeTarget(targetHost, settings, hostCandidates);
 
   if (hostLike) {
@@ -217,7 +225,7 @@ export async function matchRouteToWorkload(
   }
 
   const probeHost = targetHost === "0.0.0.0" ? "127.0.0.1" : targetHost;
-  const portOpen = await probeTcpPort(probeHost, targetPort);
+  const portOpen = await tcpProbe(probeHost, targetPort);
   if (portOpen) {
     return { matchState: "direct", confidence: "high", workload: null, relatedWorkloads: [], notes: `No Docker workload claims ${targetHost}:${targetPort}, but the port is open — bare-metal, OS-level, or network service.` };
   }
@@ -230,7 +238,7 @@ export async function matchRouteToWorkload(
 }
 
 export async function createRouteRecord(
-  route: CanonicalRoute,
+  route: EdgeRouteInput,
   match: MatchResult,
   answers: string[],
   dnsStatus: string,
@@ -238,30 +246,31 @@ export async function createRouteRecord(
   authOverrides: string[],
   matchesSeedList: (route: RouteRecord) => boolean,
   matchesOverrides: (route: RouteRecord, overrides: string[]) => boolean,
+  _probes: ProbeOverrides = {},
 ): Promise<RouteRecord> {
+  const httpAuthProbe = _probes.httpAuthProbe ?? probeHttpAuth;
   const primaryDomain = getPrimaryDomain(route);
-  const tlsDaysRemaining = route.row.certificate_expires_on
+  const tlsDaysRemaining = route.tls?.expiresAt
     ? (() => {
-        const expiresAt = new Date(route.row.certificate_expires_on).getTime();
+        const expiresAt = new Date(route.tls.expiresAt).getTime();
         return Number.isNaN(expiresAt) ? null : Math.ceil((expiresAt - Date.now()) / 86_400_000);
       })()
     : null;
   const workloadLabel = match.workload
     ? match.workload.serviceName ?? match.workload.name
     : match.matchState === "off_host"
-      ? `${route.row.forward_host}:${route.row.forward_port}`
+      ? `${route.targetHost}:${route.targetPort}`
       : "No confident workload";
 
   const partialRecord = {
     slug: "",
-    entrypoint: primaryDomain ?? `proxy-host-${route.row.id}`,
+    entrypoint: primaryDomain ?? `route-${route.sourceId}`,
     primaryDomain,
     workloadLabel,
     containerName: match.workload?.name ?? null,
     serviceName: match.workload?.serviceName ?? null,
     relatedWorkloads: match.relatedWorkloads,
-    npmAccessListId: route.row.access_list_id ?? 0,
-    npmAdvancedConfig: route.row.advanced_config ?? null,
+    authSignals: route.authSignals,
   } as RouteRecord;
 
   const seedMatch = matchesSeedList(partialRecord);
@@ -269,46 +278,44 @@ export async function createRouteRecord(
 
   let httpAuthDetected = false;
   if (!seedMatch && !overrideMatch) {
-    const targetHost = route.row.forward_host;
-    const targetPort = Number(route.row.forward_port);
-    const probeHost = targetHost === "0.0.0.0" ? "127.0.0.1" : targetHost;
-    httpAuthDetected = await probeHttpAuth(probeHost, targetPort);
+    const probeHost = route.targetHost === "0.0.0.0" ? "127.0.0.1" : route.targetHost;
+    httpAuthDetected = await httpAuthProbe(probeHost, route.targetPort);
   }
 
   const selfAuthDetected = seedMatch || overrideMatch || httpAuthDetected;
   const { slugify } = await import("@/lib/routeviz.mjs");
 
   return {
-    slug: slugify(primaryDomain ?? `route-${route.row.id}`),
-    entrypoint: primaryDomain ?? `proxy-host-${route.row.id}`,
+    slug: slugify(primaryDomain ?? `route-${route.sourceId}`),
+    entrypoint: primaryDomain ?? `route-${route.sourceId}`,
     primaryDomain,
-    edgeSource: "Nginx Proxy Manager",
-    target: `${route.row.forward_host}:${route.row.forward_port}`,
+    edgeSource: route.sourceName,
+    sourceType: route.sourceType,
+    target: `${route.targetHost}:${route.targetPort}`,
     workloadLabel,
     matchState: match.matchState,
     confidence: match.confidence,
     dnsStatus,
     dnsAnswers: answers,
     tlsDaysRemaining,
-    certificateLabel: route.row.certificate_name,
-    certificateProvider: route.row.certificate_provider,
+    certificateLabel: route.tls?.certName ?? null,
+    certificateProvider: route.tls?.provider ?? null,
     notes: match.notes,
     publicPort: null,
-    privatePort: Number(route.row.forward_port),
+    privatePort: route.targetPort,
     composeProject: match.workload?.composeProject ?? null,
     serviceName: match.workload?.serviceName ?? null,
     containerName: match.workload?.name ?? null,
     hostAddress,
-    sourceRecordId: route.row.id,
+    sourceRecordId: route.sourceId,
     duplicateDomainCount: route.duplicateDomainCount,
     sharedTargetCount: 1,
-    npmAccessListId: route.row.access_list_id ?? 0,
-    npmAdvancedConfig: route.row.advanced_config ?? null,
+    authSignals: route.authSignals,
     selfAuthDetected,
     chain: [
-      primaryDomain ?? `proxy-host-${route.row.id}`,
-      "Nginx Proxy Manager",
-      `${route.row.forward_host}:${route.row.forward_port}`,
+      primaryDomain ?? `route-${route.sourceId}`,
+      route.sourceName,
+      `${route.targetHost}:${route.targetPort}`,
       workloadLabel,
     ],
     relatedWorkloads: match.relatedWorkloads,

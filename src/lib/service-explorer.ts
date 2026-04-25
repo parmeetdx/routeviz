@@ -224,11 +224,13 @@ function buildPublicService(
     {
       label: findings.some((f) => f.type === "no_auth_layer")
         ? "No auth layer detected"
-        : route.npmAccessListId !== 0
-          ? "Auth layer: NPM access list"
-          : (route.npmAdvancedConfig ?? "").toLowerCase().includes("auth_request")
-            ? "Auth layer: forward-auth (advanced config)"
-            : "Auth layer detected",
+        : (route.authSignals ?? []).includes("npm_access_list")
+          ? "Auth layer: access list"
+          : (route.authSignals ?? []).some((s) => s.includes("auth_request") || s.includes("authelia") || s.includes("authentik"))
+            ? "Auth layer: forward-auth"
+            : (route.authSignals ?? []).length > 0
+              ? `Auth layer: ${(route.authSignals ?? [])[0]}`
+              : "Auth layer detected",
       state: findings.some((f) => f.type === "no_auth_layer") ? "warn" : "ok",
     },
   ];
