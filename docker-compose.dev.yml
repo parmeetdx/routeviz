@@ -1,0 +1,52 @@
+# Development compose — adds a local Traefik instance for smoke-testing the Traefik connector.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Then in Routeviz Setup, add a Traefik connector pointing to:
+#   http://traefik:8080   (from inside Docker network)
+#   http://localhost:8080 (from host)
+#
+# Traefik dashboard: http://localhost:8080/dashboard/
+
+services:
+  traefik:
+    image: traefik:v2.11
+    command:
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "8080:8080"   # Traefik dashboard / API
+      - "8092:80"     # HTTP entrypoint for dummy services
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - netcanary_default
+
+  # Dummy service A — accessible via http://app-a.local (add to /etc/hosts if needed)
+  whoami-a:
+    image: traefik/whoami
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami-a.rule=Host(`app-a.local`)"
+      - "traefik.http.routers.whoami-a.entrypoints=web"
+    networks:
+      - netcanary_default
+
+  # Dummy service B — with TLS resolver label (no cert issued in dev, but signals TLS intent)
+  whoami-b:
+    image: traefik/whoami
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami-b.rule=Host(`app-b.local`)"
+      - "traefik.http.routers.whoami-b.entrypoints=web"
+      - "traefik.http.routers.whoami-b.tls.certresolver=letsencrypt"
+    networks:
+      - netcanary_default
+
+networks:
+  netcanary_default:
+    external: true

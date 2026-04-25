@@ -81,7 +81,7 @@ On first launch you'll be prompted to create an account, then connect your rever
 | Nginx Proxy Manager | ✅ Ready | API mode (recommended) or SQLite bind-mount |
 | Docker | ✅ Ready | Reads running containers via Docker socket |
 | DNS | ✅ Ready | Resolves public answers per route |
-| Traefik | 🔜 Coming soon | — |
+| Traefik | ✅ Ready | HTTP API (dashboard API must be enabled) |
 | Caddy | 🔜 Planned | — |
 
 ---

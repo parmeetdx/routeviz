@@ -1,25 +1,24 @@
 import { existsSync } from "node:fs";
 
 import { formatTimestampLabel, getDnsBaselineHelper } from "@/lib/routeviz.mjs";
-import type { Connector, ConnectorConfig, ExposureIntent, NpmConnectorOptions, PersistedSettings, RouteRecord, RoutevizSnapshot } from "@/lib/routeviz-types";
+import type { Connector, ConnectorConfig, EdgeRouteInput, ExposureIntent, NpmConnectorOptions, PersistedSettings, RouteRecord, RoutevizSnapshot, TraefikConnectorOptions } from "@/lib/routeviz-types";
 
 import { scanDocker } from "@/lib/collectors/docker";
 import { dedupeRoutes, fetchNpmApiRoutes, readNpmSqlite } from "@/lib/collectors/npm";
+import { fetchTraefikRoutes } from "@/lib/collectors/traefik";
 import { getDnsBaselineAnswers, getDnsStatus, lookupAnswersForDomain } from "@/lib/collectors/dns";
 import { applySharedTargetCounts, createRouteRecord, getPrimaryDomain, matchRouteToWorkload, serializeWorkload } from "@/lib/analysis/route-match";
 import { createFindings, matchesSelfAuthSeedList, matchesUserOverrides } from "@/lib/analysis/route-findings";
 import { createWorkloadFindings } from "@/lib/analysis/workload-findings";
 import { detectHostAddress, getNextScheduledAt } from "@/lib/settings";
 
-async function buildRoutesFromNpmRows(
-  rows: Awaited<ReturnType<typeof fetchNpmApiRoutes>>,
+async function buildRoutesFromEdges(
+  edges: EdgeRouteInput[],
   workloads: Awaited<ReturnType<typeof scanDocker>>,
   settings: PersistedSettings,
   hostCandidates: Set<string>,
   hostAddress: string,
-  connectorId: string,
 ): Promise<RouteRecord[]> {
-  const edges = dedupeRoutes(rows, connectorId);
   const baselineAnswers = await getDnsBaselineAnswers(settings);
   const results = await Promise.all(
     edges.map(async (route) => {
@@ -30,6 +29,18 @@ async function buildRoutesFromNpmRows(
     }),
   );
   return applySharedTargetCounts(results);
+}
+
+async function buildRoutesFromNpmRows(
+  rows: Awaited<ReturnType<typeof fetchNpmApiRoutes>>,
+  workloads: Awaited<ReturnType<typeof scanDocker>>,
+  settings: PersistedSettings,
+  hostCandidates: Set<string>,
+  hostAddress: string,
+  connectorId: string,
+): Promise<RouteRecord[]> {
+  const edges = dedupeRoutes(rows, connectorId);
+  return buildRoutesFromEdges(edges, workloads, settings, hostCandidates, hostAddress);
 }
 
 async function refreshNpmToken(apiUrl: string, email: string, password: string): Promise<string> {
@@ -244,8 +255,36 @@ export async function buildSnapshot(
       const { connector, routes } = await runNpmConnector(cfg, workloads, settings, hostCandidates, hostAddress, onTokenRefreshed);
       connectors.push(connector);
       allRoutes = [...allRoutes, ...routes];
+    } else if (cfg.type === "traefik") {
+      const opts = cfg.options as TraefikConnectorOptions;
+      if (!opts.apiUrl) {
+        connectors.push({
+          id: cfg.id, label: cfg.label, kind: "reverse_proxy", status: "degraded", requiresAction: true,
+          hint: "Traefik API URL is required. Go to Setup to configure it.",
+          details: "Enter the URL of the Traefik dashboard API (e.g. http://traefik:8080).",
+          lastSyncAt: null,
+        });
+      } else {
+        try {
+          const rows: EdgeRouteInput[] = await fetchTraefikRoutes(opts.apiUrl, opts.apiToken || undefined, cfg.id);
+          const routes = await buildRoutesFromEdges(rows, workloads, settings, hostCandidates, hostAddress);
+          connectors.push({
+            id: cfg.id, label: cfg.label, kind: "reverse_proxy", status: "connected", requiresAction: false,
+            hint: `Loaded ${routes.length} active router${routes.length === 1 ? "" : "s"} via Traefik API.`,
+            details: `Using Traefik API at ${opts.apiUrl}.`,
+            lastSyncAt: new Date().toISOString(),
+          });
+          allRoutes = [...allRoutes, ...routes];
+        } catch (error) {
+          connectors.push({
+            id: cfg.id, label: cfg.label, kind: "reverse_proxy", status: "degraded", requiresAction: true,
+            hint: error instanceof Error ? error.message : "Could not reach the Traefik API.",
+            details: `Expected a reachable Traefik API at ${opts.apiUrl}.`,
+            lastSyncAt: null,
+          });
+        }
+      }
     } else {
-      // Placeholder for connectors not yet implemented
       connectors.push({
         id: cfg.id, label: cfg.label, kind: "reverse_proxy", status: "degraded", requiresAction: false,
         hint: `${cfg.label} connector is not yet available in this version.`,
